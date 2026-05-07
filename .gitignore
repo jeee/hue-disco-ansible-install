@@ -1,0 +1,4 @@
+.venv/
+*.retry
+.env
+.DS_Store
