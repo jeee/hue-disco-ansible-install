@@ -1,0 +1,10 @@
+python_venv_python: python3
+python_venv_packages: []
+python_requirements: []
+project_name: hue-disco
+project_user: hue
+project_group: hue
+install_dir: /opt/hue-disco
+venv_dir: /opt/hue-disco/.venv
+state_dir: /var/lib/hue-disco
+log_dir: /var/log/hue-disco

@@ -1,0 +1,6 @@
+---
+- name: restart hue-disco
+  ansible.builtin.systemd:
+    name: "{{ service_name }}"
+    state: restarted
+  failed_when: false

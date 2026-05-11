@@ -1,0 +1,21 @@
+homeassistant: true
+
+permit_join: {{ backend.zigbee2mqtt.permit_join | default(false) | bool | lower }}
+
+mqtt:
+  server: {{ backend.zigbee2mqtt.mqtt_server }}
+  base_topic: {{ backend.zigbee2mqtt.mqtt_base_topic | default('zigbee2mqtt') }}
+
+serial:
+  port: {{ z2m_container_serial_port | default(backend.zigbee2mqtt.mapped_port | default('/dev/ttyACM0')) }}
+{% if z2m_effective_adapter is defined and z2m_effective_adapter|string|trim|length > 0 %}  adapter: {{ z2m_effective_adapter }}
+{% elif backend.zigbee2mqtt.adapter is defined and backend.zigbee2mqtt.adapter|string|trim|length > 0 %}  adapter: {{ backend.zigbee2mqtt.adapter }}
+{% endif %}
+frontend:
+  enabled: true
+  host: 0.0.0.0
+  port: {{ backend.zigbee2mqtt.frontend_port | default(8099) }}
+  url: http://127.0.0.1:{{ backend.zigbee2mqtt.frontend_port | default(8099) }}
+
+advanced:
+  log_level: info

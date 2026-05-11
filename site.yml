@@ -1,0 +1,9 @@
+- hosts: raspberrypi
+  become: true
+  vars_files:
+    - group_vars/all.yml
+  roles:
+    - role: python_venv
+    - role: hue_disco
+    - role: web_interface
+    - role: systemd_service

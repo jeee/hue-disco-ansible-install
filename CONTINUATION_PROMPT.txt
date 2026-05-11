@@ -1,0 +1,16 @@
+We are continuing from the v15 ansible installer package for diyHue + MG21.
+
+Assume the package already includes the known packaging fixes plus the newer live MG21 entertainment fixes:
+- native MG21 default selection
+- no diyHue container deletion on stop
+- no empty entertainment_group_id
+- more robust diyHue patch insertion
+- native light PUT routed before legacy bridge lookup
+- IEEE normalization before native /light_state
+- native MG21 stream activation creates a local diyHue entertainment group when missing
+- native MG21 stream activation starts diyHue entertainmentService and opens UDP 2100
+- corrected EntertainmentConfiguration constructor call
+
+Do not spend time re-fixing those unless the deployed files prove they are missing.
+
+The next task should focus on proving Hue Disco frame emission and MG21 frame reception, with special attention to systemd `PrivateTmp=true` hiding `/tmp/hue-disco-*.log` from the host namespace.

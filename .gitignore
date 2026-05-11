@@ -1,4 +1,4 @@
 .venv/
 *.retry
-.env
+inventory.ini
 .DS_Store

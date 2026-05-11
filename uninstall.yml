@@ -1,0 +1,54 @@
+---
+- name: Remove Hue Disco Club
+  hosts: all
+  become: true
+  gather_facts: true
+  vars:
+    reset_mode: soft
+    purge_diyhue: "{{ (reset_mode | default('soft')) == 'full' }}"
+    install_dir: /opt/hue-disco
+    config_dir: /opt/diyhue/config
+    diyhue_container_name: diyhue
+  tasks:
+    - name: Stop and disable Hue Disco service
+      ansible.builtin.systemd:
+        name: hue-disco.service
+        state: stopped
+        enabled: false
+      failed_when: false
+
+    - name: Stop and disable diyHue service
+      ansible.builtin.systemd:
+        name: diyhue.service
+        state: stopped
+        enabled: false
+      failed_when: false
+
+    - name: Remove systemd unit files
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/systemd/system/hue-disco.service
+        - /etc/systemd/system/diyhue.service
+
+    - name: Remove diyHue container
+      ansible.builtin.command:
+        argv: [/usr/bin/docker, rm, -f, "{{ diyhue_container_name }}"]
+      failed_when: false
+      changed_when: true
+
+    - name: Remove Hue Disco application directory
+      ansible.builtin.file:
+        path: "{{ install_dir }}"
+        state: absent
+
+    - name: Remove diyHue config directory on full reset
+      ansible.builtin.file:
+        path: "{{ config_dir }}"
+        state: absent
+      when: purge_diyhue | bool
+
+    - name: Reload systemd daemon
+      ansible.builtin.systemd:
+        daemon_reload: true

@@ -1,0 +1,524 @@
+---
+- name: Set system timezone
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/timedatectl
+      - set-timezone
+      - "{{ system_timezone }}"
+  changed_when: false
+
+- name: Deploy environment file
+  ansible.builtin.template:
+    src: hue-disco.env.j2
+    dest: "{{ service_env_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart hue-disco
+
+- name: Ensure Docker service is enabled and running when diyHue is selected
+  ansible.builtin.systemd:
+    name: docker.service
+    enabled: true
+    state: started
+  when: hue.backend_mode == 'diyhue'
+
+- name: Ensure Mosquitto service is enabled and running
+  ansible.builtin.systemd:
+    name: mosquitto.service
+    enabled: true
+    state: started
+  when:
+    - hue.backend_mode == 'diyhue'
+    - not (backend.native_zigbee.enabled | default(false))
+
+- name: Ensure diyHue config dir exists when enabled
+  ansible.builtin.file:
+    path: "{{ backend.diyhue.config_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: hue.backend_mode == 'diyhue'
+
+
+- name: Auto-detect Zigbee adapter path when placeholder is still configured
+  ansible.builtin.shell: |
+    set -eu
+    ls -1 /dev/serial/by-id/* 2>/dev/null | head -n 1
+  args:
+    executable: /bin/bash
+  register: z2m_serial_autodetect
+  changed_when: false
+  failed_when: false
+  when:
+    - hue.backend_mode == 'diyhue'
+    - backend.zigbee2mqtt.enabled | default(true)
+    - not (backend.native_zigbee.enabled | default(false))
+    - backend.zigbee2mqtt.serial_port is search('YOUR_ZIGBEE_ADAPTER')
+
+- name: Fail when Zigbee adapter placeholder is still configured and no adapter could be auto-detected
+  ansible.builtin.fail:
+    msg: >-
+      Zigbee2MQTT serial_port is still the placeholder ({{ backend.zigbee2mqtt.serial_port }})
+      and no adapter was found under /dev/serial/by-id. Set backend.zigbee2mqtt.serial_port
+      to your real adapter path or attach the adapter before deploying.
+  when:
+    - hue.backend_mode == 'diyhue'
+    - backend.zigbee2mqtt.enabled | default(true)
+    - not (backend.native_zigbee.enabled | default(false))
+    - backend.zigbee2mqtt.serial_port is search('YOUR_ZIGBEE_ADAPTER')
+    - (z2m_serial_autodetect.stdout | default('') | trim | length) == 0
+
+- name: Ensure Zigbee2MQTT data dir exists when enabled
+  ansible.builtin.file:
+    path: "{{ backend.zigbee2mqtt.data_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when:
+    - hue.backend_mode == 'diyhue'
+    - backend.zigbee2mqtt.enabled | default(true)
+    - not (backend.native_zigbee.enabled | default(false))
+
+
+- name: Resolve effective Zigbee adapter path
+  ansible.builtin.set_fact:
+    z2m_effective_serial_port: >-
+      {{ (z2m_serial_autodetect.stdout | trim) if (backend.zigbee2mqtt.serial_port is search('YOUR_ZIGBEE_ADAPTER') and (z2m_serial_autodetect.stdout | default('') | trim | length > 0)) else backend.zigbee2mqtt.serial_port }}
+  when:
+    - hue.backend_mode == 'diyhue'
+    - backend.zigbee2mqtt.enabled | default(true)
+    - not (backend.native_zigbee.enabled | default(false))
+
+- name: Resolve Zigbee2MQTT serial path inside container
+  ansible.builtin.set_fact:
+    z2m_container_serial_port: "{{ backend.zigbee2mqtt.mapped_port | default('/dev/ttyACM0') }}"
+  when:
+    - hue.backend_mode == 'diyhue'
+    - backend.zigbee2mqtt.enabled | default(true)
+    - not (backend.native_zigbee.enabled | default(false))
+
+
+- name: Auto-detect Zigbee2MQTT adapter type when not explicitly configured
+  ansible.builtin.set_fact:
+    z2m_effective_adapter: >-
+      {{
+        backend.zigbee2mqtt.adapter
+        if (backend.zigbee2mqtt.adapter is defined and backend.zigbee2mqtt.adapter | string | trim | length > 0)
+        else (
+          'ember'
+          if ((z2m_effective_serial_port | default(backend.zigbee2mqtt.serial_port) | lower) is search('mg21|dongle[-_ ]?e|dongle[-_ ]?lite|efr32|sonoff'))
+          else ''
+        )
+      }}
+  when:
+    - hue.backend_mode == 'diyhue'
+    - backend.zigbee2mqtt.enabled | default(true)
+    - not (backend.native_zigbee.enabled | default(false))
+
+
+- name: Deploy Zigbee2MQTT configuration when enabled
+  ansible.builtin.template:
+    src: zigbee2mqtt_configuration.yaml.j2
+    dest: "{{ backend.zigbee2mqtt.data_dir }}/configuration.yaml"
+    owner: root
+    group: root
+    mode: "0644"
+  register: zigbee2mqtt_cfg
+  when:
+    - hue.backend_mode == 'diyhue'
+    - backend.zigbee2mqtt.enabled | default(true)
+    - not (backend.native_zigbee.enabled | default(false))
+
+- name: Ensure Zigbee2MQTT image is present when enabled
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/docker
+      - pull
+      - "{{ backend.zigbee2mqtt.image }}"
+  register: zigbee2mqtt_pull
+  changed_when: >-
+    'Downloaded newer image' in (zigbee2mqtt_pull.stdout | default('')) or
+    'Status: Downloaded newer image' in (zigbee2mqtt_pull.stdout | default('')) or
+    'Status: Image is up to date' not in (zigbee2mqtt_pull.stdout | default(''))
+  failed_when: zigbee2mqtt_pull.rc != 0
+  when:
+    - hue.backend_mode == 'diyhue'
+    - backend.zigbee2mqtt.enabled | default(true)
+    - not (backend.native_zigbee.enabled | default(false))
+
+- name: Deploy zigbee2mqtt.service when enabled
+  ansible.builtin.template:
+    src: zigbee2mqtt.service.j2
+    dest: /etc/systemd/system/zigbee2mqtt.service
+    owner: root
+    group: root
+    mode: "0644"
+  register: zigbee2mqtt_unit
+  when:
+    - hue.backend_mode == 'diyhue'
+    - backend.zigbee2mqtt.enabled | default(true)
+    - not (backend.native_zigbee.enabled | default(false))
+  notify:
+    - daemon-reload
+
+- name: Reload systemd when Zigbee2MQTT unit changed
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when:
+    - hue.backend_mode == 'diyhue'
+    - backend.zigbee2mqtt.enabled | default(true)
+    - not (backend.native_zigbee.enabled | default(false))
+    - zigbee2mqtt_unit is changed
+
+- name: Enable Zigbee2MQTT service when selected
+  ansible.builtin.systemd:
+    name: zigbee2mqtt.service
+    enabled: true
+  when:
+    - hue.backend_mode == 'diyhue'
+    - backend.zigbee2mqtt.enabled | default(true)
+    - not (backend.native_zigbee.enabled | default(false))
+
+- name: Restart Zigbee2MQTT in background when unit, image or config changed
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/systemctl
+      - restart
+      - --no-block
+      - zigbee2mqtt.service
+  when:
+    - hue.backend_mode == 'diyhue'
+    - backend.zigbee2mqtt.enabled | default(true)
+    - not (backend.native_zigbee.enabled | default(false))
+    - (zigbee2mqtt_unit is changed) or (zigbee2mqtt_pull is changed) or (zigbee2mqtt_cfg is changed)
+
+- name: Start Zigbee2MQTT when no restart was needed
+  ansible.builtin.systemd:
+    name: zigbee2mqtt.service
+    state: started
+  when:
+    - hue.backend_mode == 'diyhue'
+    - backend.zigbee2mqtt.enabled | default(true)
+    - not (backend.native_zigbee.enabled | default(false))
+    - not ((zigbee2mqtt_unit is changed) or (zigbee2mqtt_pull is changed) or (zigbee2mqtt_cfg is changed))
+
+- name: Wait for Zigbee2MQTT configured frontend to respond
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ backend.zigbee2mqtt.frontend_port | default(8099) }}"
+    method: GET
+    status_code: [200, 301, 302, 401]
+    return_content: false
+  register: z2m_wait
+  retries: 20
+  delay: 2
+  until: z2m_wait.status in [200, 301, 302, 401]
+  failed_when: false
+  when:
+    - hue.backend_mode == 'diyhue'
+    - backend.zigbee2mqtt.enabled | default(true)
+    - not (backend.native_zigbee.enabled | default(false))
+
+- name: Wait for Zigbee2MQTT onboarding frontend as fallback
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:8080"
+    method: GET
+    status_code: [200, 301, 302, 401]
+    return_content: false
+  register: z2m_wait_onboarding
+  retries: 20
+  delay: 2
+  until: z2m_wait_onboarding.status in [200, 301, 302, 401]
+  failed_when: false
+  when:
+    - hue.backend_mode == 'diyhue'
+    - backend.zigbee2mqtt.enabled | default(true)
+    - not (backend.native_zigbee.enabled | default(false))
+    - (z2m_wait.status | default(-1)) not in [200, 301, 302, 401]
+
+- name: Capture Zigbee2MQTT container state when frontend is not reachable
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/docker
+      - ps
+      - -a
+      - --filter
+      - name={{ backend.zigbee2mqtt.container_name }}
+      - --format
+      - '{{"{{.Status}}"}}'
+  register: z2m_container_state
+  changed_when: false
+  failed_when: false
+  when:
+    - hue.backend_mode == 'diyhue'
+    - backend.zigbee2mqtt.enabled | default(true)
+    - not (backend.native_zigbee.enabled | default(false))
+    - (z2m_wait.status | default(-1)) not in [200, 301, 302, 401]
+    - (z2m_wait_onboarding.status | default(-1)) not in [200, 301, 302, 401]
+
+- name: Capture Zigbee2MQTT logs when frontend is not reachable
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/docker
+      - logs
+      - --tail
+      - '80'
+      - '{{ backend.zigbee2mqtt.container_name }}'
+  register: z2m_container_logs
+  changed_when: false
+  failed_when: false
+  when:
+    - hue.backend_mode == 'diyhue'
+    - backend.zigbee2mqtt.enabled | default(true)
+    - not (backend.native_zigbee.enabled | default(false))
+    - (z2m_wait.status | default(-1)) not in [200, 301, 302, 401]
+    - (z2m_wait_onboarding.status | default(-1)) not in [200, 301, 302, 401]
+
+- name: Fail with Zigbee2MQTT diagnostics when frontend is not reachable
+  ansible.builtin.fail:
+    msg: |
+      Zigbee2MQTT frontend did not become reachable on port {{ backend.zigbee2mqtt.frontend_port | default(8099) }}
+      or fallback onboarding port 8080.
+
+      Effective serial port: {{ z2m_effective_serial_port | default(backend.zigbee2mqtt.serial_port) }}
+      Effective adapter: {{ z2m_effective_adapter | default(backend.zigbee2mqtt.adapter | default('auto')) | default('auto') }}
+      Container state: {{ z2m_container_state.stdout | default('unknown') }}
+
+      Hint: SONOFF Dongle Lite MG21 / ZBDongle-E class coordinators require serial.adapter: ember.
+
+      Last container logs:
+      {{ z2m_container_logs.stdout | default('no docker logs captured') }}
+  when:
+    - hue.backend_mode == 'diyhue'
+    - backend.zigbee2mqtt.enabled | default(true)
+    - not (backend.native_zigbee.enabled | default(false))
+    - (z2m_wait.status | default(-1)) not in [200, 301, 302, 401]
+    - (z2m_wait_onboarding.status | default(-1)) not in [200, 301, 302, 401]
+
+- name: Ensure diyHue image is present when enabled
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/docker
+      - pull
+      - "{{ backend.diyhue.image }}"
+  register: diyhue_pull
+  changed_when: >-
+    'Downloaded newer image' in (diyhue_pull.stdout | default('')) or
+    'Status: Downloaded newer image' in (diyhue_pull.stdout | default('')) or
+    'Status: Image is up to date' not in (diyhue_pull.stdout | default(''))
+  failed_when: diyhue_pull.rc != 0
+  when: hue.backend_mode == 'diyhue'
+
+- name: Deploy diyhue.service when enabled
+  ansible.builtin.template:
+    src: diyhue.service.j2
+    dest: /etc/systemd/system/diyhue.service
+    owner: root
+    group: root
+    mode: "0644"
+  register: diyhue_unit
+  when: hue.backend_mode == 'diyhue'
+  notify:
+    - daemon-reload
+
+- name: Reload systemd when diyHue unit changed
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when:
+    - hue.backend_mode == 'diyhue'
+    - diyhue_unit is changed
+
+- name: Enable diyHue service when selected
+  ansible.builtin.systemd:
+    name: diyhue.service
+    enabled: true
+  when: hue.backend_mode == 'diyhue'
+
+- name: Restart diyHue in background when unit or image changed
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/systemctl
+      - restart
+      - --no-block
+      - diyhue.service
+  when:
+    - hue.backend_mode == 'diyhue'
+    - (diyhue_unit is changed) or (diyhue_pull is changed)
+
+- name: Start diyHue when no restart was needed
+  ansible.builtin.systemd:
+    name: diyhue.service
+    state: started
+  when:
+    - hue.backend_mode == 'diyhue'
+    - not ((diyhue_unit is changed) or (diyhue_pull is changed))
+
+- name: Wait for local diyHue API to respond the first time
+  ansible.builtin.uri:
+    url: "http://127.0.0.1/api/config"
+    method: GET
+    status_code: [200, 403, 404]
+    return_content: false
+  register: diyhue_api_wait
+  retries: 45
+  delay: 2
+  until: diyhue_api_wait.status in [200, 403, 404]
+  when: hue.backend_mode == 'diyhue'
+
+- name: Patch diyHue config for selected backend
+  ansible.builtin.command:
+    argv: >-
+      {{
+        [
+          venv_dir ~ '/bin/python',
+          install_dir ~ '/patch_diyhue_config.py',
+          backend.diyhue.config_dir ~ '/config.json'
+        ]
+        + (
+          ['--native-zigbee', '--native-zigbee-adapter', (backend.native_zigbee.adapter_type | default('bellows') | string), '--radio-baudrate', (backend.native_zigbee.baudrate | default(115200) | string), '--radio-channel', (backend.native_zigbee.channel | default(20) | string), '--entertainment-group-id', (hue.entertainment_group_id | default('1') | string)]
+          if (backend.native_zigbee.enabled | default(false))
+          else ['--mqtt-server', '127.0.0.1', '--mqtt-port', (app.mqtt.port | default(1883) | string), '--discovery-prefix', (backend.zigbee2mqtt.discovery_topic | default('homeassistant'))]
+        )
+        + ['--timezone', system_timezone]
+      }}
+  register: diyhue_config_patch
+  changed_when: "'CHANGED' in (diyhue_config_patch.stdout | default(''))"
+  when: hue.backend_mode == 'diyhue'
+
+- name: Restart diyHue after MQTT config patch
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/systemctl
+      - restart
+      - --no-block
+      - diyhue.service
+  when:
+    - hue.backend_mode == 'diyhue'
+    - diyhue_config_patch is changed
+
+- name: Wait for local diyHue API to respond after patch
+  ansible.builtin.uri:
+    url: "http://127.0.0.1/api/config"
+    method: GET
+    status_code: [200, 403, 404]
+    return_content: false
+  register: diyhue_api_wait_after_patch
+  retries: 45
+  delay: 2
+  until: diyhue_api_wait_after_patch.status in [200, 403, 404]
+  when: hue.backend_mode == 'diyhue'
+
+- name: Trigger diyHue light scan after services are ready
+  ansible.builtin.uri:
+    url: "http://127.0.0.1/scan"
+    method: GET
+    status_code: [200, 302, 401, 403]
+    return_content: false
+  failed_when: false
+  when: hue.backend_mode == 'diyhue'
+
+- name: Announce real Hue bridge pairing window in Ansible output
+  ansible.builtin.debug:
+    msg: |
+      Real Hue bridge pairing is about to start for {{ hue.bridge_ip | default('the configured bridge IP') }}.
+
+      Press the physical button on top of the bridge now.
+      The bootstrap helper will keep retrying registration for up to 45 seconds
+      and will retry every 3 seconds until it succeeds or times out.
+  when: hue.backend_mode == 'official_bridge'
+
+- name: Auto-register Hue bridge credentials when enabled
+  ansible.builtin.command:
+    argv:
+      - /usr/sbin/runuser
+      - -u
+      - "{{ project_user }}"
+      - --
+      - "{{ venv_dir }}/bin/python"
+      - "{{ install_dir }}/bootstrap_hue_credentials.py"
+      - "{{ config_path }}"
+      - --timeout
+      - "120"
+      - --pairing-wait-seconds
+      - "45"
+      - --pairing-retry-interval
+      - "3"
+  register: hue_bridge_bootstrap
+  changed_when: >-
+    hue_bridge_bootstrap.rc == 0 and
+    '"status": "ok"' in (hue_bridge_bootstrap.stdout | default(''))
+  failed_when: false
+  when:
+    - hue.backend_mode in ['diyhue', 'official_bridge']
+    - hue.backend_mode != 'diyhue' or (hue.auto_register_diyhue | default(true) | bool)
+
+- name: Show Hue bridge bootstrap result in Ansible output
+  ansible.builtin.debug:
+    msg: |
+      Hue bridge bootstrap result:
+
+      STDOUT:
+      {{ hue_bridge_bootstrap.stdout | default('(no stdout)') }}
+
+      STDERR:
+      {{ hue_bridge_bootstrap.stderr | default('(no stderr)') }}
+
+      RC: {{ hue_bridge_bootstrap.rc | default('unknown') }}
+  when: hue.backend_mode in ['diyhue', 'official_bridge']
+
+- name: Validate Hue Disco runtime prerequisites after bootstrap
+  ansible.builtin.command:
+    argv:
+      - /usr/sbin/runuser
+      - -u
+      - "{{ project_user }}"
+      - --
+      - "{{ venv_dir }}/bin/python"
+      - "{{ install_dir }}/app_ctl.py"
+      - status-ready
+      - --config
+      - "{{ config_path }}"
+  register: hue_disco_ready_status
+  changed_when: false
+  failed_when: false
+  when: hue.backend_mode in ['diyhue', 'official_bridge']
+
+- name: Report streaming prerequisites that are still missing after bootstrap
+  ansible.builtin.debug:
+    msg: |
+      Hue Disco streaming prerequisites are still incomplete after bootstrap.
+
+      {{ hue_disco_ready_status.stdout | default('No status output was produced.') }}
+
+      If you are using a real Hue bridge, this output should now also appear during Ansible deploy.
+      When the bridge returns the link-button-required response, press the physical button
+      on top of the bridge during the 45-second pairing window and rerun bootstrap or restart the service
+      if the timeout has already elapsed.
+
+      The deployment will continue, and the hue-disco service will keep retrying
+      in the background until credentials, light IDs and an entertainment group exist.
+  when:
+    - hue.backend_mode in ['diyhue', 'official_bridge']
+    - (hue_disco_ready_status.rc | default(1)) != 0
+
+- name: Deploy hue-disco.service
+  ansible.builtin.template:
+    src: hue-disco.service.j2
+    dest: "/etc/systemd/system/{{ service_name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - daemon-reload
+    - restart hue-disco
+
+- name: Flush handlers before starting hue-disco
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start hue-disco
+  ansible.builtin.systemd:
+    name: "{{ service_name }}"
+    enabled: true
+    state: started

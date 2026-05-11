@@ -1,0 +1,60 @@
+---
+- name: Install APT dependencies for Python and audio
+  ansible.builtin.apt:
+    name: "{{ python_venv_packages }}"
+    state: present
+    update_cache: true
+
+- name: Ensure Ansible Python packaging helpers are installed
+  ansible.builtin.apt:
+    name:
+      - python3-packaging
+      - python3-setuptools
+    state: present
+
+- name: Ensure project group exists
+  ansible.builtin.group:
+    name: "{{ project_group }}"
+    system: true
+
+- name: Ensure project user exists
+  ansible.builtin.user:
+    name: "{{ project_user }}"
+    group: "{{ project_group }}"
+    groups: audio
+    append: true
+    shell: /usr/sbin/nologin
+    system: true
+    create_home: false
+
+- name: Ensure base directories exist
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner | default(project_user) }}"
+    group: "{{ item.group | default(project_group) }}"
+    mode: "{{ item.mode | default('0755') }}"
+  loop:
+    - { path: "{{ install_dir }}" }
+    - { path: "{{ state_dir }}", owner: "{{ project_user }}", group: "{{ project_group }}", mode: "0750" }
+    - { path: "{{ log_dir }}", owner: "{{ project_user }}", group: "{{ project_group }}", mode: "0750" }
+
+- name: Create or update Python virtualenv
+  ansible.builtin.command:
+    cmd: "{{ python_venv_python }} -m venv {{ venv_dir }}"
+    creates: "{{ venv_dir }}/bin/python"
+
+- name: Upgrade pip/setuptools/wheel
+  ansible.builtin.pip:
+    name:
+      - pip
+      - setuptools
+      - wheel
+    state: latest
+    virtualenv: "{{ venv_dir }}"
+
+- name: Install Python requirements
+  ansible.builtin.pip:
+    name: "{{ python_requirements }}"
+    state: present
+    virtualenv: "{{ venv_dir }}"

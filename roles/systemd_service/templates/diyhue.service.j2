@@ -1,0 +1,20 @@
+[Unit]
+Description=diyHue container
+After=docker.service network-online.target{% if not (backend.native_zigbee.enabled | default(false)) %} mosquitto.service{% if backend.zigbee2mqtt.enabled | default(true) %} zigbee2mqtt.service{% endif %}{% endif %}
+Requires=docker.service
+Wants={% if not (backend.native_zigbee.enabled | default(false)) %}mosquitto.service{% if backend.zigbee2mqtt.enabled | default(true) %} zigbee2mqtt.service{% endif %}{% endif %}
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+TimeoutStartSec=0
+TimeoutStopSec=15
+{% if backend.native_zigbee.enabled | default(false) %}
+ExecStart=/bin/sh -lc 'docker start {{ backend.diyhue.container_name }} >/dev/null 2>&1 || docker run -d --name {{ backend.diyhue.container_name }} --restart unless-stopped --network host -e TZ={{ system_timezone }} -v {{ backend.diyhue.config_dir }}:/opt/hue-emulator/config -v {{ install_dir }}/mg21-native:/opt/hue-emulator/ext/mg21-native:rw --device={{ backend.native_zigbee.serial_port }}:/dev/ttyUSB0 {{ backend.diyhue.image }}; /usr/bin/python3 {{ install_dir }}/apply_diyhue_runtime_patches.py --container {{ backend.diyhue.container_name }} --restart-on-change; {{ venv_dir }}/bin/python {{ install_dir }}/patch_diyhue_config.py {{ backend.diyhue.config_dir }}/config.json --native-zigbee --native-zigbee-adapter {{ backend.native_zigbee.adapter_type | default('bellows') }} --radio-baudrate {{ backend.native_zigbee.baudrate | default(115200) }} --radio-channel {{ backend.native_zigbee.channel | default(20) }} --entertainment-group-id {{ hue.entertainment_group_id | default("1") }} --timezone {{ system_timezone }}; /usr/bin/python3 {{ install_dir }}/apply_diyhue_mg21_current.py --container {{ backend.diyhue.container_name }} --restart-on-change'
+{% else %}
+ExecStart=/bin/sh -lc 'docker start {{ backend.diyhue.container_name }} >/dev/null 2>&1 || docker run -d --name {{ backend.diyhue.container_name }} --restart unless-stopped --network host -e TZ={{ system_timezone }} -v {{ backend.diyhue.config_dir }}:/opt/hue-emulator/config {{ backend.diyhue.image }}; /usr/bin/python3 {{ install_dir }}/apply_diyhue_runtime_patches.py --container {{ backend.diyhue.container_name }} --restart-on-change'
+{% endif %}
+ExecStop=-/usr/bin/docker stop -t 2 {{ backend.diyhue.container_name }}
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,118 @@
+# Managed by Ansible
+# Hue Disco Club runtime configuration
+
+bridge_ip: "{{ hue.bridge_ip | default('127.0.0.1' if hue.backend_mode == 'diyhue' else '') }}"
+api_base_path: "{{ hue.api_base_path | default('/api') }}"
+backend_mode: "{{ hue.backend_mode }}"
+app_key: "{{ hue.app_key | default('') }}"
+client_key: "{{ hue.client_key | default('') }}"
+psk_identity: "{{ hue.psk_identity | default(hue.app_key | default('')) }}"
+entertainment_group_id: "{{ hue.entertainment_group_id | default('') }}"
+auto_register_diyhue: {{ hue.auto_register_diyhue | default(true) | bool | lower }}
+auto_discover_entertainment_group: {{ hue.auto_discover_entertainment_group | default(true) | bool | lower }}
+auto_create_entertainment_group: {{ hue.auto_create_entertainment_group | default(true) | bool | lower }}
+entertainment_group_name: "{{ hue.entertainment_group_name | default('Hue Disco Area') }}"
+diyhue_config_path: "{{ hue.diyhue_config_path | default(backend.diyhue.config_dir ~ '/config.yaml') }}"
+
+sample_rate: {{ app.sample_rate }}
+block_size: {{ app.block_size }}
+sensitivity: {{ app.sensitivity }}
+min_interval_ms: {{ app.min_interval_ms }}
+energy_decay: {{ app.energy_decay }}
+beat_prediction_ms: {{ app.beat_prediction_ms | default(0) }}
+beat_subdivision: {{ app.beat_subdivision | default(1) }}
+change_every_beats: {{ app.change_every_beats | default(1) }}
+accent_every_beats: {{ app.accent_every_beats | default(1) }}
+beat_mode: "{{ app.beat_mode | default('phase_locked') }}"
+render_mode: "{{ app.render_mode | default('hybrid') }}"
+detector_backend: "{{ app.detector_backend | default('native') }}"
+bpm_min: {{ app.bpm_min | default(100) }}
+bpm_max: {{ app.bpm_max | default(165) }}
+beat_band_low_hz: {{ app.beat_band_low_hz | default(45) }}
+beat_band_high_hz: {{ app.beat_band_high_hz | default(135) }}
+intensity_mode: "{{ app.intensity_mode | default('adaptive') }}"
+grid_behavior: "{{ app.grid_behavior | default('adaptive') }}"
+min_pulse_level: {{ app.min_pulse_level | default(0.18) }}
+max_pulse_level: {{ app.max_pulse_level | default(1.0) }}
+audio_intensity_gain: {{ app.audio_intensity_gain | default(1.0) }}
+audio_gate_threshold: {{ app.audio_gate_threshold | default(0.12) }}
+render_fps: {{ app.render_fps | default(20) }}
+active_profile: "{{ app.active_profile | default('lounge') }}"
+hue_step: {{ app.hue_step }}
+strobe_seconds: {{ app.strobe_seconds }}
+max_transition_ms: {{ app.max_transition_ms }}
+default_brightness: {{ app.default_brightness }}
+disco_autostart: {{ app.disco_autostart | default(false) | bool | lower }}
+audio_device: {{ app.audio_device if app.audio_device is not none else 'null' }}
+
+mqtt:
+  enabled: {{ app.mqtt.enabled | bool | lower }}
+  host: "{{ app.mqtt.host }}"
+  port: {{ app.mqtt.port }}
+  topic_prefix: "{{ app.mqtt.topic_prefix }}"
+
+web:
+  host: "{{ web.host }}"
+  port: {{ web.port }}
+  control_password: "{{ web.control_password }}"
+  admin_password: "{{ web.admin_password }}"
+  session_secret: "{{ web.session_secret }}"
+
+lights:
+{% for light in (hue.lights | default([])) %}
+  - id: {{ light.id if light.id is not none else 'null' }}
+    name: "{{ light.name }}"
+    enabled: {{ light.enabled | default(true) | bool | lower }}
+    max_brightness: {{ light.max_brightness | default(app.default_brightness) }}
+{% if light.allowed_colors is defined %}
+    allowed_colors:
+{% for c in light.allowed_colors %}
+      - "{{ c }}"
+{% endfor %}
+{% endif %}
+{% endfor %}
+
+groups:
+{% if (hue.groups | default([]) | length) == 0 %}
+  []
+{% else %}
+{% for group in (hue.groups | default([])) %}
+  - name: "{{ group.name }}"
+    members:
+{% for m in group.members %}
+      - "{{ m }}"
+{% endfor %}
+    max_brightness: {{ group.max_brightness | default(app.default_brightness) }}
+{% if group.allowed_colors is defined %}
+    allowed_colors:
+{% for c in group.allowed_colors %}
+      - "{{ c }}"
+{% endfor %}
+{% endif %}
+{% endfor %}
+{% endif %}
+
+
+strobe_presets:
+{% if app.strobe_presets is defined and (app.strobe_presets | length) > 0 %}
+{% for preset in app.strobe_presets %}
+  - name: "{{ preset.name }}"
+    duration: {{ preset.duration | default(app.strobe_seconds | default(3)) }}
+    on_ms: {{ preset.on_ms | default(app.strobe_on_ms | default(20)) }}
+    off_ms: {{ preset.off_ms | default(app.strobe_off_ms | default(80)) }}
+    sync_mode: "{{ preset.sync_mode | default(app.strobe_sync_mode | default('free')) }}"
+{% endfor %}
+{% else %}
+  - name: "Quick strobe"
+    duration: {{ app.strobe_seconds | default(3) }}
+    on_ms: {{ app.strobe_on_ms | default(20) }}
+    off_ms: {{ app.strobe_off_ms | default(80) }}
+    sync_mode: "{{ app.strobe_sync_mode | default('free') }}"
+{% endif %}
+
+profiles:
+{% if app.profiles is defined and app.profiles %}
+{{ app.profiles | to_nice_yaml(indent=2) | indent(2, true) }}
+{% else %}
+  {}
+{% endif %}

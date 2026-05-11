@@ -1,0 +1,28 @@
+[Unit]
+Description=Hue Disco Club
+After={{ ((systemd.after | default([])) + (['mosquitto.service'] if (app.mqtt.enabled | default(true)) else []) + (['zigbee2mqtt.service'] if (hue.backend_mode == 'diyhue' and backend.zigbee2mqtt.enabled | default(true)) else []) + (['diyhue.service'] if hue.backend_mode == 'diyhue' else [])) | unique | join(' ') }}
+Wants={{ ((systemd.wants | default([])) + (['mosquitto.service'] if (app.mqtt.enabled | default(true)) else [])) | unique | join(' ') }}
+{% if hue.backend_mode == 'diyhue' %}
+Requires=diyhue.service
+{% endif %}
+
+[Service]
+Type=simple
+User={{ project_user }}
+Group={{ project_group }}
+WorkingDirectory={{ install_dir }}
+EnvironmentFile={{ service_env_file }}
+ExecStart={{ install_dir }}/.venv/bin/python {{ install_dir }}/app_main.py --config {{ config_path }}
+Restart=always
+RestartSec={{ systemd.restart_sec | default(3) }}
+TimeoutStartSec=210
+TimeoutStopSec=10
+KillMode=mixed
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths={{ install_dir }} {{ state_dir }} {{ log_dir }}
+LimitNOFILE={{ systemd.limit_nofile | default(65536) }}
+
+[Install]
+WantedBy=multi-user.target

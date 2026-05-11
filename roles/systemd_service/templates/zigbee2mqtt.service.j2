@@ -1,0 +1,17 @@
+[Unit]
+Description=Zigbee2MQTT container
+After=docker.service network-online.target mosquitto.service
+Requires=docker.service
+Wants=mosquitto.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+TimeoutStartSec=0
+TimeoutStopSec=20
+ExecStart=/bin/sh -lc 'docker start {{ backend.zigbee2mqtt.container_name }} >/dev/null 2>&1 || docker run -d --name {{ backend.zigbee2mqtt.container_name }} --restart unless-stopped --network host -e TZ={{ system_timezone }} -v {{ backend.zigbee2mqtt.data_dir }}:/app/data -v /run/udev:/run/udev:ro --device={{ z2m_effective_serial_port | default(backend.zigbee2mqtt.serial_port) }}:{{ backend.zigbee2mqtt.mapped_port | default("/dev/ttyACM0") }} {{ backend.zigbee2mqtt.image }}'
+ExecStop=-/usr/bin/docker stop -t 5 {{ backend.zigbee2mqtt.container_name }}
+ExecStopPost=-/usr/bin/docker rm -f {{ backend.zigbee2mqtt.container_name }}
+
+[Install]
+WantedBy=multi-user.target

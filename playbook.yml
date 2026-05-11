@@ -1,5 +1,0 @@
-- name: Install Hue Disco stack
-  hosts: all
-  become: true
-  roles:
-    - hue_disco_stack

@@ -1,0 +1,10 @@
+---
+- name: daemon-reload
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: restart hue-disco
+  ansible.builtin.systemd:
+    name: "{{ service_name }}"
+    state: restarted
+  failed_when: false

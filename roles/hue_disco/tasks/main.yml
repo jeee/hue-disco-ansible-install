@@ -1,0 +1,106 @@
+---
+- name: Ensure application directory exists
+  ansible.builtin.file:
+    path: "{{ install_dir }}"
+    state: directory
+    owner: "{{ project_user }}"
+    group: "{{ project_group }}"
+    mode: "0755"
+
+- name: Ensure source checkout directory exists
+  ansible.builtin.file:
+    path: "{{ install_dir }}/src"
+    state: directory
+    owner: "{{ project_user }}"
+    group: "{{ project_group }}"
+    mode: "0755"
+
+- name: Check out hue-disco application repository
+  ansible.builtin.git:
+    repo: "{{ hue_disco_git_repo }}"
+    dest: "{{ hue_disco_git_dest }}"
+    version: "{{ hue_disco_git_version }}"
+    update: true
+    force: "{{ hue_disco_git_force | default(false) }}"
+    accept_hostkey: true
+  notify: restart hue-disco
+
+- name: Check out Zigbee stack repository
+  ansible.builtin.git:
+    repo: "{{ zigbee_stack_git_repo }}"
+    dest: "{{ zigbee_stack_git_dest }}"
+    version: "{{ zigbee_stack_git_version }}"
+    update: true
+    force: "{{ zigbee_stack_git_force | default(false) }}"
+    accept_hostkey: true
+  when:
+    - hue.backend_mode == 'diyhue'
+    - backend.native_zigbee.enabled | default(false)
+  notify: restart hue-disco
+
+- name: Deploy Python application files from hue-disco checkout
+  ansible.builtin.copy:
+    src: "{{ hue_disco_git_dest }}/{{ item }}"
+    dest: "{{ install_dir }}/{{ item }}"
+    remote_src: true
+    owner: "{{ project_user }}"
+    group: "{{ project_group }}"
+    mode: "0755"
+  loop:
+    - app_main.py
+    - app_ctl.py
+    - disco_core.py
+    - dtls_hue_stream.py
+    - hue_api.py
+    - config_schema.py
+    - bootstrap_hue_credentials.py
+    - patch_diyhue_config.py
+    - apply_diyhue_runtime_patches.py
+    - apply_diyhue_mg21_current.py
+    - start_mg21_daemon.sh
+  notify: restart hue-disco
+
+- name: Ensure MG21 native extension directory exists
+  ansible.builtin.file:
+    path: "{{ install_dir }}/mg21-native"
+    state: directory
+    owner: "{{ project_user }}"
+    group: "{{ project_group }}"
+    mode: "0755"
+  when:
+    - hue.backend_mode == 'diyhue'
+    - backend.native_zigbee.enabled | default(false)
+
+- name: Deploy MG21 native extension tree from zigbee-stack checkout
+  ansible.builtin.copy:
+    src: "{{ zigbee_stack_git_dest }}/diyhue_mg21_native_zigbee"
+    dest: "{{ install_dir }}/mg21-native/"
+    remote_src: true
+    owner: "{{ project_user }}"
+    group: "{{ project_group }}"
+    mode: preserve
+  when:
+    - hue.backend_mode == 'diyhue'
+    - backend.native_zigbee.enabled | default(false)
+  notify: restart hue-disco
+
+- name: Deploy MG21 native code zip from zigbee-stack checkout
+  ansible.builtin.copy:
+    src: "{{ zigbee_stack_git_dest }}/mg21-native-code.zip"
+    dest: "{{ install_dir }}/mg21-native-code.zip"
+    remote_src: true
+    owner: "{{ project_user }}"
+    group: "{{ project_group }}"
+    mode: "0644"
+  when:
+    - hue.backend_mode == 'diyhue'
+    - backend.native_zigbee.enabled | default(false)
+
+- name: Deploy config.yaml
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: "{{ config_path }}"
+    owner: "{{ project_user }}"
+    group: "{{ project_group }}"
+    mode: "0640"
+  notify: restart hue-disco

@@ -1,0 +1,228 @@
+project_name: hue-disco
+project_user: hue
+project_group: hue
+install_dir: /opt/hue-disco
+venv_dir: /opt/hue-disco/.venv
+config_path: /opt/hue-disco/config.yaml
+state_dir: /var/lib/hue-disco
+log_dir: /var/log/hue-disco
+service_name: hue-disco
+service_env_file: /etc/default/hue-disco
+system_timezone: Europe/Amsterdam
+web_port: 8090
+
+python_venv_python: python3
+python_venv_packages:
+  - python3
+  - python3-venv
+  - python3-dev
+  - python3-pip
+  - python3-packaging
+  - python3-setuptools
+  - gcc
+  - g++
+  - make
+  - portaudio19-dev
+  - libsndfile1
+  - libasound2-dev
+  - libssl-dev
+  - curl
+  - git
+  - openssl
+  - jq
+  - ca-certificates
+  - mosquitto
+  - mosquitto-clients
+  - docker.io
+
+python_requirements:
+  - flask>=3.0.0
+  - requests>=2.32.0
+  - pyyaml>=6.0.1
+  - numpy>=1.26.0
+  - sounddevice>=0.4.6
+  - paho-mqtt>=2.1.0
+  - waitress>=3.0.0
+  - aubio-ledfx>=0.4.11
+  - gpiozero>=2.0.1
+
+hue:
+  backend_mode: diyhue   # diyhue | official_bridge
+  # For diyHue, bridge_ip is optional and defaults to 127.0.0.1 on the Pi.
+  # For official_bridge, leave bridge_ip empty to try automatic Hue bridge discovery,
+  # or set it explicitly if discovery is blocked on your network.
+  # bridge_ip: 127.0.0.1
+  # Use /api for diyHue and for the default real-bridge v1-compatible path.
+  # Set /clip/v2 only if you explicitly want the modern UUID-based bridge resource model.
+  api_base_path: /api
+  app_key: ""
+  client_key: ""
+  # psk_identity defaults to app_key. Leave empty unless you know you need a custom value.
+  psk_identity: ""
+  # Leave entertainment_group_id empty to let bootstrap discover or create it.
+  entertainment_group_id: ""
+  auto_register_diyhue: true
+  auto_discover_entertainment_group: true
+  auto_create_entertainment_group: true
+  diyhue_web_username: admin@diyhue.org
+  diyhue_web_password: changeme
+  entertainment_group_name: "Hue Disco Area"
+  # Light names below are logical slot aliases, not required to match Hue bridge light names.
+  # With api_base_path=/api, bootstrap prefers legacy numeric light ids so the same config can be
+  # reused more easily between diyHue and an official Hue bridge.
+  # With api_base_path=/clip/v2, bootstrap instead writes UUID resource ids.
+  lights:
+    - id: null
+      name: left_front
+      enabled: true
+      max_brightness: 180
+      allowed_colors: ["#FF0040", "#00C8FF", "#FFE600"]   # Optional hard safety limit per light. Room styling should now happen in profiles/light groups.
+    - id: null
+      name: right_front
+      enabled: true
+      max_brightness: 180
+  groups:
+    - name: front
+      members: [left_front, right_front]
+      max_brightness: 170
+      allowed_colors: ["#FF0040", "#00C8FF"]
+
+app:
+  sample_rate: 44100
+  block_size: 1024
+  sensitivity: 1.12
+  min_interval_ms: 140
+  energy_decay: 0.92
+  beat_mode: phase_locked
+  render_mode: hybrid
+  detector_backend: native
+  bpm_min: 100
+  bpm_max: 165
+  beat_band_low_hz: 45
+  beat_band_high_hz: 135
+  intensity_mode: adaptive
+  grid_behavior: adaptive
+  render_fps: 20
+  hue_step: 18
+  strobe_seconds: 3
+  max_transition_ms: 80
+  default_brightness: 180
+  strobe_on_ms: 20
+  strobe_off_ms: 80
+  disco_autostart: false
+  audio_device: null
+  mqtt:
+    enabled: true
+    host: localhost
+    port: 1883
+    topic_prefix: hue_disco
+  strobe_presets:
+    - name: Quick strobe
+      duration: 2.5
+      on_ms: 20
+      off_ms: 90
+      sync_mode: free
+    - name: Beat flash
+      duration: 2.5
+      on_ms: 30
+      off_ms: 110
+      sync_mode: beat_locked
+  profiles:
+    lounge_custom:
+      builtin: false
+      description: Example custom profile with two light groups
+      profile_defaults:
+        render_mode: hybrid
+        intensity_mode: adaptive
+        grid_behavior: adaptive
+        base_brightness: 110
+        peak_brightness: 170
+        pulse_attack_ms: 80
+        pulse_hold_ms: 120
+        pulse_decay_ms: 260
+        pulse_mix: 0.38
+        pulse_intensity: 0.7
+        color_motion: 0.35
+        color_step_scale: 0.5
+        accent_every_beats: 4
+        accent_multiplier: 1.08
+        palette_colors: ["#FFB26B", "#FFD166", "#7BDFF2"]
+      light_groups:
+        - id: ambient
+          name: Ambient
+          role: ambient
+          light_ids: []
+          overrides:
+            pulse_mix: 0.22
+            color_motion: 0.20
+            group_activity: 0.65
+        - id: accent
+          name: Accent
+          role: accent
+          light_ids: []
+          overrides:
+            pulse_mix: 0.7
+            pulse_intensity: 0.95
+            group_activity: 1.15
+            palette_colors: ["#FF0040", "#FFE600"]
+
+web:
+  host: 0.0.0.0
+  port: 8090
+  control_password: "disco-control"
+  admin_password: "disco-admin"
+  session_secret: "change-this-secret"
+
+systemd:
+  after:
+    - network-online.target
+    - sound.target
+  wants:
+    - network-online.target
+  restart_sec: 3
+
+backend:
+  native_zigbee:
+    enabled: true
+    # bellows = Ember/EZSP adapters (EFR32/MG21/Sonoff Dongle-E class)
+    # zstack = TI CC2652/CC1352 Z-Stack/ZNP adapters
+    # deconz = ConBee/RaspBee via zigpy-deconz; wired but not tested in this project
+    adapter_type: bellows
+    serial_port: /dev/serial/by-id/YOUR_ZIGBEE_ADAPTER
+    baudrate: 115200
+    channel: 20
+  diyhue:
+    enabled: true
+    container_name: diyhue
+    image: diyhue/core:latest
+    timezone: Europe/Amsterdam
+    config_dir: /opt/diyhue/config
+    default_username: admin@diyhue.org
+    default_password: changeme
+    default_web_username: admin@diyhue.org
+    default_web_password: changeme
+  zigbee2mqtt:
+    enabled: false
+    container_name: zigbee2mqtt
+    image: ghcr.io/koenkk/zigbee2mqtt:latest
+    data_dir: /opt/zigbee2mqtt/data
+    serial_port: /dev/serial/by-id/YOUR_ZIGBEE_ADAPTER  # Replace with your adapter path; first adapter is auto-detected if left as placeholder
+    mapped_port: /dev/ttyACM0
+    adapter: ""  # Optional override; auto-detected as ember for MG21/Dongle-E style adapters, otherwise set explicitly (e.g. zstack, ember)
+    frontend_port: 8099
+    permit_join: false
+    mqtt_server: mqtt://localhost:1883
+    mqtt_base_topic: zigbee2mqtt
+    discovery_topic: homeassistant
+
+# Source repositories. Defaults use HTTPS so a fresh target can clone public repos
+# without preconfigured GitHub SSH keys. Override to git@github.com:... for private repos.
+hue_disco_git_repo: https://github.com/jeee/hue-disco.git
+hue_disco_git_version: main
+hue_disco_git_force: false
+hue_disco_git_dest: "{{ install_dir }}/src/hue-disco"
+
+zigbee_stack_git_repo: https://github.com/jeee/zigbee-stack.git
+zigbee_stack_git_version: main
+zigbee_stack_git_force: false
+zigbee_stack_git_dest: "{{ install_dir }}/src/zigbee-stack"

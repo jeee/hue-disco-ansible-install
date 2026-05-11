@@ -1,0 +1,22 @@
+---
+- name: Ensure web template directory exists
+  ansible.builtin.file:
+    path: "{{ install_dir }}/templates"
+    state: directory
+    owner: "{{ project_user }}"
+    group: "{{ project_group }}"
+    mode: "0755"
+
+- name: Deploy web templates from hue-disco checkout
+  ansible.builtin.copy:
+    src: "{{ hue_disco_git_dest }}/templates/{{ item }}"
+    dest: "{{ install_dir }}/templates/{{ item }}"
+    remote_src: true
+    owner: "{{ project_user }}"
+    group: "{{ project_group }}"
+    mode: "0644"
+  loop:
+    - base.html
+    - index.html
+    - admin.html
+  notify: restart hue-disco

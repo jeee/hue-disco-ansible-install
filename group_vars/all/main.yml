@@ -1,3 +1,0 @@
-hue_disco_base_dir: /opt/hue-disco
-hue_disco_timezone: Europe/Amsterdam
-zigbee_adapter: /dev/ttyUSB0
