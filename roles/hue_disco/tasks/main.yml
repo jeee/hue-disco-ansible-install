@@ -84,17 +84,6 @@
     - backend.native_zigbee.enabled | default(false)
   notify: restart hue-disco
 
-- name: Deploy MG21 native code zip from zigbee-stack checkout
-  ansible.builtin.copy:
-    src: "{{ zigbee_stack_git_dest }}/mg21-native-code.zip"
-    dest: "{{ install_dir }}/mg21-native-code.zip"
-    remote_src: true
-    owner: "{{ project_user }}"
-    group: "{{ project_group }}"
-    mode: "0644"
-  when:
-    - hue.backend_mode == 'diyhue'
-    - backend.native_zigbee.enabled | default(false)
 
 - name: Deploy config.yaml
   ansible.builtin.template:

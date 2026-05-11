@@ -275,7 +275,6 @@ Key points:
 - mount `${install_dir}/mg21-native` into the diyHue container
 - patch diyHue at startup and start `mg21_daemon.py`
 - MG21 code is cloned from `zigbee_stack_git_repo` and deployed to `${install_dir}/mg21-native`
-- the nested `mg21-native-code.zip` archive is cloned from the same `zigbee-stack` repository
 
 
 ## v15 note
