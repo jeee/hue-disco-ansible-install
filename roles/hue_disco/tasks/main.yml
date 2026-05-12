@@ -53,11 +53,24 @@
     - dtls_hue_stream.py
     - hue_api.py
     - config_schema.py
+    - update_manager.py
+    - beat_plugin_loader.py
+    - beat_tracker_core.py
     - bootstrap_hue_credentials.py
     - patch_diyhue_config.py
     - apply_diyhue_runtime_patches.py
     - apply_diyhue_mg21_current.py
     - start_mg21_daemon.sh
+  notify: restart hue-disco
+
+- name: Deploy beat detector plugin tree from hue-disco checkout
+  ansible.builtin.copy:
+    src: "{{ hue_disco_git_dest }}/beat_plugins"
+    dest: "{{ install_dir }}/"
+    remote_src: true
+    owner: "{{ project_user }}"
+    group: "{{ project_group }}"
+    mode: preserve
   notify: restart hue-disco
 
 - name: Ensure MG21 native extension directory exists
