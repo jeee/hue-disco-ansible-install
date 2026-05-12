@@ -25,6 +25,14 @@
     accept_hostkey: true
   notify: restart hue-disco
 
+- name: Ensure hue-disco source checkout is writable by service user
+  ansible.builtin.file:
+    path: "{{ hue_disco_git_dest }}"
+    state: directory
+    owner: "{{ project_user }}"
+    group: "{{ project_group }}"
+    recurse: true
+
 - name: Check out Zigbee stack repository
   ansible.builtin.git:
     repo: "{{ zigbee_stack_git_repo }}"
