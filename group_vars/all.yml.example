@@ -12,28 +12,36 @@ system_timezone: Europe/Amsterdam
 web_port: 8090
 
 # Optional Raspberry Pi network helper for a real Hue bridge plugged directly into eth0.
-# Default is disabled and does nothing. Enable only when you explicitly want the Pi to
-# fall back to a private eth0 subnet if eth0 has carrier but no normal DHCP address.
-rpi_network:
-  enabled: false
-  mode: auto              # disabled | client | auto | hue_bridge_direct
-  uplink:
-    interface: wlan0      # Wi-Fi uplink that already connects to your network/internet
-  eth:
-    interface: eth0
-    dhcp_timeout_seconds: 20
-  eth_downstream:
-    address: 192.168.77.1/24
-    dhcp_start: 192.168.77.2
-    dhcp_end: 192.168.77.10
-    lease_time: 24h
-    hue_bridge_ip: 192.168.77.2
-  expose_to_lan:
-    enabled: false        # Optional/advanced. If true, expose Hue bridge through a second Wi-Fi IP.
-    mode: dhcp            # dhcp | static. DHCP asks for a second lease using dhcp_client_id.
-    dhcp_client_id: hue-bridge-direct
-    virtual_ip: ""        # Only used when mode: static.
-    forwarded_tcp_ports: [80, 443]
+# Default is disabled by omission. Uncomment this minimal block to enable auto fallback:
+# - eth0 behaves normally when it receives DHCP
+# - if eth0 has carrier but no DHCP, Pi serves the Hue bridge on 192.168.77.2
+# - Pi requests a second Wi-Fi DHCP lease and forwards bridge HTTP/HTTPS to it
+#
+# rpi_network:
+#   enabled: true
+#   mode: auto
+#   expose_to_lan:
+#     enabled: true
+#     mode: dhcp
+#
+# Optional overrides if your interfaces/subnet differ:
+#   uplink:
+#     interface: wlan0
+#   eth:
+#     interface: eth0
+#     dhcp_timeout_seconds: 20
+#   eth_downstream:
+#     address: 192.168.77.1/24
+#     dhcp_start: 192.168.77.2
+#     dhcp_end: 192.168.77.10
+#     lease_time: 24h
+#     hue_bridge_ip: 192.168.77.2
+#   expose_to_lan:
+#     dhcp_client_id: hue-bridge-direct
+#     forwarded_tcp_ports: [80, 443]
+#     # static alternative instead of second DHCP lease:
+#     # mode: static
+#     # virtual_ip: "192.168.1.51"
 
 python_venv_python: python3
 python_venv_packages:
