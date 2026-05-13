@@ -233,8 +233,8 @@ EOF
 if [ -n "$lan_ip" ]; then
 cat >> "$NFT_FILE" <<EOF
     counter oifname "$ETH_IFACE" ip daddr $HUE_INTERNAL_IP tcp dport { $ports_csv } snat to $ETH_STATIC_IP
-    counter ip saddr $HUE_INTERNAL_IP ip daddr $ETH_STATIC_CIDR oifname "$UPLINK_IFACE" snat to $lan_ip
-    counter ip saddr ${ETH_STATIC_CIDR} ip daddr != $ETH_STATIC_CIDR oifname "$UPLINK_IFACE" masquerade
+    counter ip saddr $HUE_INTERNAL_IP oifname "$UPLINK_IFACE" snat to $lan_ip
+    counter ip saddr ${ETH_STATIC_CIDR} ip saddr != $HUE_INTERNAL_IP oifname "$UPLINK_IFACE" masquerade
 EOF
 else
 cat >> "$NFT_FILE" <<EOF
