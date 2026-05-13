@@ -43,7 +43,6 @@ trap 'cleanup_runtime; exit 0' TERM INT
 
 runtime_complete() {
   [ -s "$DNSMASQ_PID" ] && kill -0 "$(cat "$DNSMASQ_PID")" 2>/dev/null || return 1
-  nft list table ip "$TABLE_NAME" >/dev/null 2>&1 || return 1
   return 0
 }
 
@@ -104,11 +103,14 @@ fi
 
 if ip -4 addr show dev "$ETH_IFACE" scope global | grep -q "inet ${ETH_STATIC_IP}/"; then
   if runtime_complete; then
-    log "direct Hue bridge mode already active on $ETH_IFACE; nothing to do"
-    exit 0
+    log "direct Hue bridge mode already active on $ETH_IFACE; refreshing NAT rules"
+    skip_dnsmasq_start=1
+  else
+    log "direct Hue bridge address is present but runtime state is incomplete; repairing"
+    skip_dnsmasq_start=0
   fi
-  log "direct Hue bridge address is present but runtime state is incomplete; repairing"
 else
+  skip_dnsmasq_start=0
   if [ "$MODE" = "auto" ]; then
     log "$ETH_IFACE carrier detected; waiting ${DHCP_TIMEOUT}s for normal DHCP client address"
     sleep "$DHCP_TIMEOUT"
@@ -157,8 +159,12 @@ server=8.8.8.8
 log-dhcp
 EOF
 
-dnsmasq --keep-in-foreground --conf-file="$DNSMASQ_CONF" --pid-file="$DNSMASQ_PID" &
-dnsmasq_foreground_pid=$!
+if [ "${skip_dnsmasq_start:-0}" = "1" ]; then
+  dnsmasq_foreground_pid=""
+else
+  dnsmasq --keep-in-foreground --conf-file="$DNSMASQ_CONF" --pid-file="$DNSMASQ_PID" &
+  dnsmasq_foreground_pid=$!
+fi
 
 lan_ip=""
 if [ "$LAN_EXPOSE" = "1" ]; then
@@ -206,7 +212,7 @@ table ip $TABLE_NAME {
 EOF
 if [ -n "$lan_ip" ]; then
 cat >> "$NFT_FILE" <<EOF
-    iifname "$UPLINK_IFACE" ip daddr $lan_ip tcp dport { $ports_csv } dnat to $HUE_INTERNAL_IP
+    counter iifname "$UPLINK_IFACE" ip daddr $lan_ip tcp dport { $ports_csv } dnat to $HUE_INTERNAL_IP
 EOF
 fi
 cat >> "$NFT_FILE" <<EOF
@@ -216,7 +222,7 @@ cat >> "$NFT_FILE" <<EOF
 EOF
 if [ -n "$lan_ip" ]; then
 cat >> "$NFT_FILE" <<EOF
-    ip daddr $lan_ip tcp dport { $ports_csv } dnat to $HUE_INTERNAL_IP
+    counter ip daddr $lan_ip tcp dport { $ports_csv } dnat to $HUE_INTERNAL_IP
 EOF
 fi
 cat >> "$NFT_FILE" <<EOF
@@ -226,17 +232,17 @@ cat >> "$NFT_FILE" <<EOF
 EOF
 if [ -n "$lan_ip" ]; then
 cat >> "$NFT_FILE" <<EOF
-    oifname "$ETH_IFACE" ip daddr $HUE_INTERNAL_IP tcp dport { $ports_csv } snat to $ETH_STATIC_IP
-    ip saddr $HUE_INTERNAL_IP oifname "$UPLINK_IFACE" snat to $lan_ip
+    counter oifname "$ETH_IFACE" ip daddr $HUE_INTERNAL_IP tcp dport { $ports_csv } snat to $ETH_STATIC_IP
+    counter ip saddr $HUE_INTERNAL_IP oifname "$UPLINK_IFACE" snat to $lan_ip
 EOF
 fi
 cat >> "$NFT_FILE" <<EOF
-    ip saddr ${ETH_STATIC_CIDR} oifname "$UPLINK_IFACE" masquerade
+    counter ip saddr ${ETH_STATIC_CIDR} oifname "$UPLINK_IFACE" masquerade
   }
   chain forward {
     type filter hook forward priority filter; policy accept;
-    iifname "$ETH_IFACE" oifname "$UPLINK_IFACE" accept
-    iifname "$UPLINK_IFACE" oifname "$ETH_IFACE" ip daddr $HUE_INTERNAL_IP accept
+    counter iifname "$ETH_IFACE" oifname "$UPLINK_IFACE" accept
+    counter iifname "$UPLINK_IFACE" oifname "$ETH_IFACE" ip daddr $HUE_INTERNAL_IP accept
   }
 }
 EOF
@@ -248,5 +254,9 @@ else
   log "Hue bridge private IP: $HUE_INTERNAL_IP; no LAN exposed IP active"
 fi
 
-log "direct Hue bridge service is active; keeping dnsmasq alive"
-wait "$dnsmasq_foreground_pid"
+if [ -n "${dnsmasq_foreground_pid:-}" ]; then
+  log "direct Hue bridge service is active; keeping dnsmasq alive"
+  wait "$dnsmasq_foreground_pid"
+else
+  log "direct Hue bridge service already active; NAT rules refreshed"
+fi
