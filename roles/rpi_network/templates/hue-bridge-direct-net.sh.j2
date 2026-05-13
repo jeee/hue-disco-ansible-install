@@ -226,6 +226,7 @@ cat >> "$NFT_FILE" <<EOF
 EOF
 if [ -n "$lan_ip" ]; then
 cat >> "$NFT_FILE" <<EOF
+    oifname "$ETH_IFACE" ip daddr $HUE_INTERNAL_IP tcp dport { $ports_csv } snat to $ETH_STATIC_IP
     ip saddr $HUE_INTERNAL_IP oifname "$UPLINK_IFACE" snat to $lan_ip
 EOF
 fi
