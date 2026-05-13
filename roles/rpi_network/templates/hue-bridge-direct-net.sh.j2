@@ -31,6 +31,9 @@ cleanup_runtime() {
     rm -f "$LAN_IP_FILE"
   fi
   nft delete table ip "$TABLE_NAME" 2>/dev/null || true
+  if command -v nmcli >/dev/null 2>&1 && [ -n "${ETH_IFACE:-}" ]; then
+    nmcli device set "$ETH_IFACE" managed yes 2>/dev/null || true
+  fi
 }
 
 if [ "${1:-start}" = "stop" ]; then
@@ -96,10 +99,22 @@ log "activating direct Hue bridge mode on $ETH_IFACE"
 cleanup_runtime
 mkdir -p "$RUNDIR"
 
+# NetworkManager may otherwise notice eth0 and remove the manual fallback address.
+# Direct mode owns eth0 until this service is stopped or the next normal-client boot.
+if command -v nmcli >/dev/null 2>&1; then
+  nmcli device disconnect "$ETH_IFACE" 2>/dev/null || true
+  nmcli device set "$ETH_IFACE" managed no 2>/dev/null || true
+fi
+
 ip link set "$ETH_IFACE" up
 ip addr flush dev "$ETH_IFACE" scope global || true
-ip addr add "$ETH_STATIC_CIDR" dev "$ETH_IFACE"
+ip addr replace "$ETH_STATIC_CIDR" dev "$ETH_IFACE"
 sysctl -w net.ipv4.ip_forward=1 >/dev/null
+
+if ! ip -4 addr show dev "$ETH_IFACE" | grep -q "inet ${ETH_STATIC_IP}/"; then
+  log "ERROR: failed to assign $ETH_STATIC_CIDR to $ETH_IFACE"
+  exit 1
+fi
 
 cat > "$DNSMASQ_CONF" <<EOF
 interface=$ETH_IFACE
