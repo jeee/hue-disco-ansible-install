@@ -17,7 +17,6 @@
     group: root
     mode: "0644"
   when: rpi_network.enabled | default(false) | bool
-  notify: restart hue-bridge-direct-net
 
 - name: Deploy Hue bridge direct network helper
   ansible.builtin.template:
@@ -27,7 +26,6 @@
     group: root
     mode: "0755"
   when: rpi_network.enabled | default(false) | bool
-  notify: restart hue-bridge-direct-net
 
 - name: Deploy secondary DHCP lease hook
   ansible.builtin.template:
@@ -37,7 +35,6 @@
     group: root
     mode: "0755"
   when: rpi_network.enabled | default(false) | bool
-  notify: restart hue-bridge-direct-net
 
 - name: Deploy NetworkManager dispatcher hook for direct bridge mode
   ansible.builtin.template:
@@ -58,7 +55,6 @@
   when: rpi_network.enabled | default(false) | bool
   notify:
     - daemon-reload
-    - restart hue-bridge-direct-net
 
 - name: Deploy Hue bridge direct network systemd timer
   ansible.builtin.template:

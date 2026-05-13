@@ -32,8 +32,8 @@
       HiddenServiceDir {{ tor_ssh.hidden_service_dir | default('/var/lib/tor/hue-disco-ssh') }}
       HiddenServiceVersion 3
       HiddenServicePort {{ tor_ssh.virtual_port | default(22) }} {{ tor_ssh.target_host | default('127.0.0.1') }}:{{ tor_ssh.target_port | default(22) }}
+  register: tor_ssh_torrc
   when: tor_ssh.enabled | default(false) | bool
-  notify: restart tor
 
 - name: Enable and start Tor service
   ansible.builtin.systemd:
@@ -43,9 +43,13 @@
     daemon_reload: true
   when: tor_ssh.enabled | default(false) | bool
 
-- name: Flush Tor restart before reading onion hostname
-  ansible.builtin.meta: flush_handlers
-  when: tor_ssh.enabled | default(false) | bool
+- name: Restart Tor after hidden service configuration changed
+  ansible.builtin.systemd:
+    name: tor.service
+    state: restarted
+  when:
+    - tor_ssh.enabled | default(false) | bool
+    - tor_ssh_torrc is changed
 
 - name: Wait for Tor onion hostname file
   ansible.builtin.wait_for:
