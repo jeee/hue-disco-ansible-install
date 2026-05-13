@@ -79,10 +79,14 @@
     daemon_reload: true
   when: rpi_network.enabled | default(false) | bool
 
-- name: Run Hue bridge direct network reconciliation once when explicitly enabled
-  ansible.builtin.systemd:
-    name: hue-bridge-direct-net.service
-    state: started
+- name: Trigger Hue bridge direct network reconciliation once when explicitly enabled
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/systemctl
+      - start
+      - --no-block
+      - hue-bridge-direct-net.service
+  changed_when: false
   when: rpi_network.enabled | default(false) | bool
 
 - name: Disable Hue bridge direct network helper by default
