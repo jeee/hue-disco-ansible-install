@@ -39,6 +39,8 @@ cleanup_runtime() {
   fi
 }
 
+trap 'cleanup_runtime; exit 0' TERM INT
+
 runtime_complete() {
   [ -s "$DNSMASQ_PID" ] && kill -0 "$(cat "$DNSMASQ_PID")" 2>/dev/null || return 1
   nft list table ip "$TABLE_NAME" >/dev/null 2>&1 || return 1
@@ -141,6 +143,7 @@ interface=$ETH_IFACE
 bind-interfaces
 except-interface=lo
 dhcp-authoritative
+dhcp-leasefile=$RUNDIR/dnsmasq.leases
 dhcp-range=$ETH_DHCP_START,$ETH_DHCP_END,$ETH_DHCP_LEASE
 dhcp-option=option:router,$ETH_STATIC_IP
 dhcp-option=option:dns-server,$ETH_STATIC_IP
@@ -149,7 +152,8 @@ server=8.8.8.8
 log-dhcp
 EOF
 
-dnsmasq --conf-file="$DNSMASQ_CONF" --pid-file="$DNSMASQ_PID"
+dnsmasq --keep-in-foreground --conf-file="$DNSMASQ_CONF" --pid-file="$DNSMASQ_PID" &
+dnsmasq_foreground_pid=$!
 
 lan_ip=""
 if [ "$LAN_EXPOSE" = "1" ]; then
@@ -227,3 +231,6 @@ if [ -n "$lan_ip" ]; then
 else
   log "Hue bridge private IP: $HUE_INTERNAL_IP; no LAN exposed IP active"
 fi
+
+log "direct Hue bridge service is active; keeping dnsmasq alive"
+wait "$dnsmasq_foreground_pid"

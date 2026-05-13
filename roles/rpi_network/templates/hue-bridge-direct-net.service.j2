@@ -5,10 +5,12 @@ After=network-online.target
 Documentation=file:{{ install_dir }}/docs/RPI_NETWORK_MODES.md
 
 [Service]
-Type=oneshot
+Type=simple
 EnvironmentFile=/etc/default/hue-bridge-direct-net
 ExecStart=/usr/local/sbin/hue-bridge-direct-net start
+ExecStop=/usr/local/sbin/hue-bridge-direct-net stop
 TimeoutStartSec=90
+TimeoutStopSec=20
 
 [Install]
 WantedBy=multi-user.target
