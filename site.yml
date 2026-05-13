@@ -4,7 +4,9 @@
     - group_vars/all.yml
   roles:
     - role: python_venv
-    - role: rpi_network
+    # rpi_network is intentionally not part of the default install path.
+    # It can alter live connectivity on headless Pis and must only be run explicitly
+    # after the direct-bridge design has been validated for the target network.
     - role: tor_ssh
     - role: hue_disco
     - role: web_interface
