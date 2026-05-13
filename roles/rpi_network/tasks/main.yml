@@ -1,0 +1,68 @@
+---
+- name: Install optional direct-bridge networking packages
+  ansible.builtin.apt:
+    name:
+      - dnsmasq-base
+      - nftables
+      - isc-dhcp-client
+    state: present
+    update_cache: true
+  when: rpi_network.enabled | default(false) | bool
+
+- name: Deploy Hue bridge direct network environment
+  ansible.builtin.template:
+    src: hue-bridge-direct-net.env.j2
+    dest: /etc/default/hue-bridge-direct-net
+    owner: root
+    group: root
+    mode: "0644"
+  when: rpi_network.enabled | default(false) | bool
+  notify: restart hue-bridge-direct-net
+
+- name: Deploy Hue bridge direct network helper
+  ansible.builtin.template:
+    src: hue-bridge-direct-net.sh.j2
+    dest: /usr/local/sbin/hue-bridge-direct-net
+    owner: root
+    group: root
+    mode: "0755"
+  when: rpi_network.enabled | default(false) | bool
+  notify: restart hue-bridge-direct-net
+
+- name: Deploy secondary DHCP lease hook
+  ansible.builtin.template:
+    src: hue-bridge-direct-dhclient-script.j2
+    dest: /usr/local/sbin/hue-bridge-direct-dhclient-script
+    owner: root
+    group: root
+    mode: "0755"
+  when: rpi_network.enabled | default(false) | bool
+  notify: restart hue-bridge-direct-net
+
+- name: Deploy Hue bridge direct network systemd unit
+  ansible.builtin.template:
+    src: hue-bridge-direct-net.service.j2
+    dest: /etc/systemd/system/hue-bridge-direct-net.service
+    owner: root
+    group: root
+    mode: "0644"
+  when: rpi_network.enabled | default(false) | bool
+  notify:
+    - daemon-reload
+    - restart hue-bridge-direct-net
+
+- name: Enable and start Hue bridge direct network helper when explicitly enabled
+  ansible.builtin.systemd:
+    name: hue-bridge-direct-net.service
+    enabled: true
+    state: started
+    daemon_reload: true
+  when: rpi_network.enabled | default(false) | bool
+
+- name: Disable Hue bridge direct network helper by default
+  ansible.builtin.systemd:
+    name: hue-bridge-direct-net.service
+    enabled: false
+    state: stopped
+  failed_when: false
+  when: not (rpi_network.enabled | default(false) | bool)

@@ -168,6 +168,8 @@ sudo runuser -u hue -- /opt/hue-disco/.venv/bin/python /opt/hue-disco/bootstrap_
 
 For a real Hue bridge, you can leave `bridge_ip` empty and let bootstrap try automatic discovery first. If discovery does not work on your network, set `bridge_ip` explicitly and run bootstrap again.
 
+Optional Raspberry Pi direct-bridge networking is available but disabled by default. When explicitly enabled, the Pi can fall back to a private `eth0` subnet for a Hue bridge plugged directly into Ethernet, NAT its internet access through Wi-Fi, and optionally request a second Wi-Fi DHCP lease that forwards selected TCP ports to the bridge. See `docs/RPI_NETWORK_MODES.md`.
+
 Trigger a diyHue scan manually:
 
 ```bash

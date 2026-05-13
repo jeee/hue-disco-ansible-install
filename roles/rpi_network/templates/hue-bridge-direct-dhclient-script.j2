@@ -1,0 +1,36 @@
+#!/bin/sh
+# Minimal dhclient hook for the optional Hue bridge LAN exposure lease.
+# It deliberately does not install routes or DNS from this secondary lease.
+set -eu
+
+RUNDIR=/run/hue-bridge-direct
+STATE_IP="$RUNDIR/lan-ip"
+STATE_IFACE="$RUNDIR/lan-iface"
+mkdir -p "$RUNDIR"
+
+remove_old_ip() {
+  if [ -s "$STATE_IP" ] && [ -s "$STATE_IFACE" ]; then
+    old_ip=$(cat "$STATE_IP" 2>/dev/null || true)
+    old_iface=$(cat "$STATE_IFACE" 2>/dev/null || true)
+    if [ -n "$old_ip" ] && [ -n "$old_iface" ]; then
+      ip addr del "$old_ip/32" dev "$old_iface" 2>/dev/null || true
+    fi
+  fi
+}
+
+case "${reason:-}" in
+  BOUND|RENEW|REBIND|REBOOT)
+    if [ -n "${new_ip_address:-}" ] && [ -n "${interface:-}" ]; then
+      remove_old_ip
+      ip addr replace "$new_ip_address/32" dev "$interface" label "$interface:huex"
+      printf '%s\n' "$new_ip_address" > "$STATE_IP"
+      printf '%s\n' "$interface" > "$STATE_IFACE"
+    fi
+    ;;
+  EXPIRE|FAIL|RELEASE|STOP)
+    remove_old_ip
+    rm -f "$STATE_IP" "$STATE_IFACE"
+    ;;
+esac
+
+exit 0

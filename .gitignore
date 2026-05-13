@@ -2,3 +2,5 @@
 *.retry
 inventory.ini
 .DS_Store
+
+group_vars/all.yml

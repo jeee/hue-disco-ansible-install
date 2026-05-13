@@ -1,0 +1,194 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ENV_FILE=/etc/default/hue-bridge-direct-net
+[ -r "$ENV_FILE" ] && . "$ENV_FILE"
+
+RUNDIR=/run/hue-bridge-direct
+DNSMASQ_PID="$RUNDIR/dnsmasq.pid"
+DNSMASQ_CONF="$RUNDIR/dnsmasq.conf"
+DHCLIENT_PID="$RUNDIR/dhclient.pid"
+DHCLIENT_LEASES="$RUNDIR/dhclient.leases"
+DHCLIENT_CONF="$RUNDIR/dhclient.conf"
+LAN_IP_FILE="$RUNDIR/lan-ip"
+NFT_FILE="$RUNDIR/nftables.nft"
+TABLE_NAME=hue_bridge_direct
+
+log() { printf '[hue-bridge-direct-net] %s\n' "$*"; }
+
+cleanup_runtime() {
+  if [ -s "$DNSMASQ_PID" ]; then
+    kill "$(cat "$DNSMASQ_PID")" 2>/dev/null || true
+    rm -f "$DNSMASQ_PID"
+  fi
+  if [ -s "$DHCLIENT_PID" ]; then
+    dhclient -r -pf "$DHCLIENT_PID" -lf "$DHCLIENT_LEASES" "${UPLINK_IFACE:-wlan0}" 2>/dev/null || true
+    kill "$(cat "$DHCLIENT_PID")" 2>/dev/null || true
+    rm -f "$DHCLIENT_PID"
+  fi
+  if [ -s "$LAN_IP_FILE" ]; then
+    ip addr del "$(cat "$LAN_IP_FILE")/32" dev "${UPLINK_IFACE:-wlan0}" 2>/dev/null || true
+    rm -f "$LAN_IP_FILE"
+  fi
+  nft delete table ip "$TABLE_NAME" 2>/dev/null || true
+}
+
+if [ "${1:-start}" = "stop" ]; then
+  cleanup_runtime
+  exit 0
+fi
+
+if [ "${ENABLED:-0}" != "1" ]; then
+  log "disabled; doing nothing"
+  exit 0
+fi
+
+MODE=${MODE:-auto}
+ETH_IFACE=${ETH_IFACE:-eth0}
+UPLINK_IFACE=${UPLINK_IFACE:-wlan0}
+DHCP_TIMEOUT=${DHCP_TIMEOUT:-20}
+ETH_STATIC_CIDR=${ETH_STATIC_CIDR:-192.168.77.1/24}
+ETH_STATIC_IP=${ETH_STATIC_IP:-192.168.77.1}
+ETH_DHCP_START=${ETH_DHCP_START:-192.168.77.2}
+ETH_DHCP_END=${ETH_DHCP_END:-192.168.77.10}
+ETH_DHCP_LEASE=${ETH_DHCP_LEASE:-24h}
+HUE_INTERNAL_IP=${HUE_INTERNAL_IP:-$ETH_DHCP_START}
+LAN_EXPOSE=${LAN_EXPOSE:-0}
+LAN_EXPOSE_MODE=${LAN_EXPOSE_MODE:-dhcp}
+LAN_DHCP_CLIENT_ID=${LAN_DHCP_CLIENT_ID:-hue-bridge-direct-$(hostname)}
+FORWARDED_TCP_PORTS=${FORWARDED_TCP_PORTS:-"80 443"}
+
+mkdir -p "$RUNDIR"
+
+if [ "$MODE" = "client" ] || [ "$MODE" = "disabled" ]; then
+  log "mode=$MODE; doing nothing"
+  exit 0
+fi
+
+if [ ! -d "/sys/class/net/$ETH_IFACE" ]; then
+  log "$ETH_IFACE does not exist"
+  exit 0
+fi
+
+# Wait for cable/carrier. If no cable is present, do nothing.
+carrier=0
+for _ in $(seq 1 10); do
+  carrier=$(cat "/sys/class/net/$ETH_IFACE/carrier" 2>/dev/null || echo 0)
+  [ "$carrier" = "1" ] && break
+  sleep 1
+done
+if [ "$carrier" != "1" ]; then
+  log "$ETH_IFACE has no carrier; doing nothing"
+  exit 0
+fi
+
+if [ "$MODE" = "auto" ]; then
+  log "$ETH_IFACE carrier detected; waiting ${DHCP_TIMEOUT}s for normal DHCP client address"
+  sleep "$DHCP_TIMEOUT"
+  if ip -4 addr show dev "$ETH_IFACE" scope global | grep -v "${ETH_STATIC_IP}/" | grep -q 'inet '; then
+    log "$ETH_IFACE already has a non-fallback IPv4 address; staying in normal client mode"
+    cleanup_runtime
+    exit 0
+  fi
+fi
+
+log "activating direct Hue bridge mode on $ETH_IFACE"
+cleanup_runtime
+mkdir -p "$RUNDIR"
+
+ip link set "$ETH_IFACE" up
+ip addr flush dev "$ETH_IFACE" scope global || true
+ip addr add "$ETH_STATIC_CIDR" dev "$ETH_IFACE"
+sysctl -w net.ipv4.ip_forward=1 >/dev/null
+
+cat > "$DNSMASQ_CONF" <<EOF
+interface=$ETH_IFACE
+bind-interfaces
+except-interface=lo
+dhcp-authoritative
+dhcp-range=$ETH_DHCP_START,$ETH_DHCP_END,$ETH_DHCP_LEASE
+dhcp-option=option:router,$ETH_STATIC_IP
+dhcp-option=option:dns-server,$ETH_STATIC_IP
+server=1.1.1.1
+server=8.8.8.8
+log-dhcp
+EOF
+
+dnsmasq --conf-file="$DNSMASQ_CONF" --pid-file="$DNSMASQ_PID"
+
+lan_ip=""
+if [ "$LAN_EXPOSE" = "1" ]; then
+  case "$LAN_EXPOSE_MODE" in
+    static)
+      if [ -z "${LAN_VIRTUAL_IP:-}" ]; then
+        log "LAN expose static mode selected but LAN_VIRTUAL_IP is empty"
+      else
+        lan_ip="$LAN_VIRTUAL_IP"
+        ip addr replace "$lan_ip/32" dev "$UPLINK_IFACE" label "$UPLINK_IFACE:huex"
+        printf '%s\n' "$lan_ip" > "$LAN_IP_FILE"
+      fi
+      ;;
+    dhcp)
+      log "requesting secondary DHCP lease on $UPLINK_IFACE for LAN exposure"
+      cat > "$DHCLIENT_CONF" <<EOF
+send dhcp-client-identifier "$LAN_DHCP_CLIENT_ID";
+request subnet-mask, routers, domain-name-servers, domain-name, broadcast-address;
+timeout 20;
+retry 30;
+EOF
+      rm -f "$LAN_IP_FILE"
+      dhclient -v -cf "$DHCLIENT_CONF" -pf "$DHCLIENT_PID" -lf "$DHCLIENT_LEASES" -sf /usr/local/sbin/hue-bridge-direct-dhclient-script "$UPLINK_IFACE" || true
+      for _ in $(seq 1 25); do
+        [ -s "$LAN_IP_FILE" ] && break
+        sleep 1
+      done
+      if [ -s "$LAN_IP_FILE" ]; then
+        lan_ip=$(cat "$LAN_IP_FILE")
+      else
+        log "secondary DHCP lease was not obtained; bridge remains private on $HUE_INTERNAL_IP"
+      fi
+      ;;
+    *)
+      log "unknown LAN_EXPOSE_MODE=$LAN_EXPOSE_MODE; skipping LAN exposure"
+      ;;
+  esac
+fi
+
+ports_csv=$(printf '%s' "$FORWARDED_TCP_PORTS" | tr ' ' ',' | sed 's/,$//')
+cat > "$NFT_FILE" <<EOF
+table ip $TABLE_NAME {
+  chain prerouting {
+    type nat hook prerouting priority dstnat; policy accept;
+EOF
+if [ -n "$lan_ip" ]; then
+cat >> "$NFT_FILE" <<EOF
+    iifname "$UPLINK_IFACE" ip daddr $lan_ip tcp dport { $ports_csv } dnat to $HUE_INTERNAL_IP
+EOF
+fi
+cat >> "$NFT_FILE" <<EOF
+  }
+  chain postrouting {
+    type nat hook postrouting priority srcnat; policy accept;
+EOF
+if [ -n "$lan_ip" ]; then
+cat >> "$NFT_FILE" <<EOF
+    ip saddr $HUE_INTERNAL_IP oifname "$UPLINK_IFACE" snat to $lan_ip
+EOF
+fi
+cat >> "$NFT_FILE" <<EOF
+    ip saddr ${ETH_STATIC_CIDR} oifname "$UPLINK_IFACE" masquerade
+  }
+  chain forward {
+    type filter hook forward priority filter; policy accept;
+    iifname "$ETH_IFACE" oifname "$UPLINK_IFACE" accept
+    iifname "$UPLINK_IFACE" oifname "$ETH_IFACE" ip daddr $HUE_INTERNAL_IP accept
+  }
+}
+EOF
+nft -f "$NFT_FILE"
+
+if [ -n "$lan_ip" ]; then
+  log "Hue bridge private IP: $HUE_INTERNAL_IP; LAN exposed IP: $lan_ip"
+else
+  log "Hue bridge private IP: $HUE_INTERNAL_IP; no LAN exposed IP active"
+fi
