@@ -15,6 +15,23 @@
     group: "{{ project_group }}"
     mode: "0755"
 
+- name: Mark managed source checkouts as Git safe directories
+  ansible.builtin.shell: |
+    set -eu
+    if /usr/bin/git config --system --get-all safe.directory | grep -Fx -- {{ item | quote }} >/dev/null; then
+      exit 0
+    fi
+    /usr/bin/git config --system --add safe.directory {{ item | quote }}
+    echo CHANGED
+  args:
+    executable: /bin/bash
+  register: git_safe_directory
+  changed_when: "'CHANGED' in (git_safe_directory.stdout | default(''))"
+  loop:
+    - "{{ hue_disco_git_dest }}"
+    - "{{ zigbee_stack_git_dest }}"
+  when: item | length > 0
+
 - name: Check out hue-disco application repository
   ansible.builtin.git:
     repo: "{{ hue_disco_git_repo }}"
