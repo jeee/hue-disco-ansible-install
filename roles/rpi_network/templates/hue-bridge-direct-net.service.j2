@@ -6,10 +6,8 @@ Documentation=file:{{ install_dir }}/docs/RPI_NETWORK_MODES.md
 
 [Service]
 Type=oneshot
-RemainAfterExit=yes
 EnvironmentFile=/etc/default/hue-bridge-direct-net
 ExecStart=/usr/local/sbin/hue-bridge-direct-net start
-ExecStop=/usr/local/sbin/hue-bridge-direct-net stop
 TimeoutStartSec=90
 
 [Install]

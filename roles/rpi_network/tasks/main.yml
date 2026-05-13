@@ -39,6 +39,15 @@
   when: rpi_network.enabled | default(false) | bool
   notify: restart hue-bridge-direct-net
 
+- name: Deploy NetworkManager dispatcher hook for direct bridge mode
+  ansible.builtin.template:
+    src: hue-bridge-direct-dispatcher.j2
+    dest: /etc/NetworkManager/dispatcher.d/90-hue-bridge-direct
+    owner: root
+    group: root
+    mode: "0755"
+  when: rpi_network.enabled | default(false) | bool
+
 - name: Deploy Hue bridge direct network systemd unit
   ansible.builtin.template:
     src: hue-bridge-direct-net.service.j2
@@ -51,18 +60,44 @@
     - daemon-reload
     - restart hue-bridge-direct-net
 
-- name: Enable and start Hue bridge direct network helper when explicitly enabled
+- name: Deploy Hue bridge direct network systemd timer
+  ansible.builtin.template:
+    src: hue-bridge-direct-net.timer.j2
+    dest: /etc/systemd/system/hue-bridge-direct-net.timer
+    owner: root
+    group: root
+    mode: "0644"
+  when: rpi_network.enabled | default(false) | bool
+  notify:
+    - daemon-reload
+
+- name: Enable periodic Hue bridge direct network reconciliation when explicitly enabled
   ansible.builtin.systemd:
-    name: hue-bridge-direct-net.service
+    name: hue-bridge-direct-net.timer
     enabled: true
     state: started
     daemon_reload: true
   when: rpi_network.enabled | default(false) | bool
 
-- name: Disable Hue bridge direct network helper by default
+- name: Run Hue bridge direct network reconciliation once when explicitly enabled
   ansible.builtin.systemd:
     name: hue-bridge-direct-net.service
+    state: started
+  when: rpi_network.enabled | default(false) | bool
+
+- name: Disable Hue bridge direct network helper by default
+  ansible.builtin.systemd:
+    name: "{{ item }}"
     enabled: false
     state: stopped
+  loop:
+    - hue-bridge-direct-net.timer
+    - hue-bridge-direct-net.service
   failed_when: false
+  when: not (rpi_network.enabled | default(false) | bool)
+
+- name: Remove NetworkManager dispatcher hook when direct bridge mode is disabled
+  ansible.builtin.file:
+    path: /etc/NetworkManager/dispatcher.d/90-hue-bridge-direct
+    state: absent
   when: not (rpi_network.enabled | default(false) | bool)

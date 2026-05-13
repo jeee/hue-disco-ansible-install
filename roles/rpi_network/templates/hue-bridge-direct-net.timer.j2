@@ -1,0 +1,11 @@
+[Unit]
+Description=Periodically reconcile optional Hue bridge direct Ethernet mode
+Documentation=file:{{ install_dir }}/docs/RPI_NETWORK_MODES.md
+
+[Timer]
+OnBootSec=30s
+OnUnitInactiveSec=30s
+Unit=hue-bridge-direct-net.service
+
+[Install]
+WantedBy=timers.target

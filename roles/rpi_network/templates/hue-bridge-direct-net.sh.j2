@@ -13,6 +13,7 @@ DHCLIENT_CONF="$RUNDIR/dhclient.conf"
 LAN_IP_FILE="$RUNDIR/lan-ip"
 NFT_FILE="$RUNDIR/nftables.nft"
 TABLE_NAME=hue_bridge_direct
+DIRECT_CONN="hue-bridge-direct-${ETH_IFACE:-eth0}"
 
 log() { printf '[hue-bridge-direct-net] %s\n' "$*"; }
 
@@ -31,8 +32,8 @@ cleanup_runtime() {
     rm -f "$LAN_IP_FILE"
   fi
   nft delete table ip "$TABLE_NAME" 2>/dev/null || true
-  if command -v nmcli >/dev/null 2>&1 && [ -n "${ETH_IFACE:-}" ]; then
-    nmcli device set "$ETH_IFACE" managed yes 2>/dev/null || true
+  if command -v nmcli >/dev/null 2>&1; then
+    nmcli connection down "$DIRECT_CONN" 2>/dev/null || true
   fi
 }
 
@@ -48,6 +49,7 @@ fi
 
 MODE=${MODE:-auto}
 ETH_IFACE=${ETH_IFACE:-eth0}
+DIRECT_CONN="hue-bridge-direct-$ETH_IFACE"
 UPLINK_IFACE=${UPLINK_IFACE:-wlan0}
 DHCP_TIMEOUT=${DHCP_TIMEOUT:-20}
 ETH_STATIC_CIDR=${ETH_STATIC_CIDR:-192.168.77.1/24}
@@ -99,16 +101,18 @@ log "activating direct Hue bridge mode on $ETH_IFACE"
 cleanup_runtime
 mkdir -p "$RUNDIR"
 
-# NetworkManager may otherwise notice eth0 and remove the manual fallback address.
-# Direct mode owns eth0 until this service is stopped or the next normal-client boot.
 if command -v nmcli >/dev/null 2>&1; then
-  nmcli device disconnect "$ETH_IFACE" 2>/dev/null || true
-  nmcli device set "$ETH_IFACE" managed no 2>/dev/null || true
+  if ! nmcli -t -f NAME connection show | grep -Fx -- "$DIRECT_CONN" >/dev/null; then
+    nmcli connection add type ethernet ifname "$ETH_IFACE" con-name "$DIRECT_CONN" autoconnect no ipv4.method manual ipv4.addresses "$ETH_STATIC_CIDR" ipv4.never-default yes ipv6.method ignore
+  else
+    nmcli connection modify "$DIRECT_CONN" ifname "$ETH_IFACE" autoconnect no ipv4.method manual ipv4.addresses "$ETH_STATIC_CIDR" ipv4.never-default yes ipv6.method ignore
+  fi
+  nmcli connection up "$DIRECT_CONN"
+else
+  ip link set "$ETH_IFACE" up
+  ip addr flush dev "$ETH_IFACE" scope global || true
+  ip addr replace "$ETH_STATIC_CIDR" dev "$ETH_IFACE"
 fi
-
-ip link set "$ETH_IFACE" up
-ip addr flush dev "$ETH_IFACE" scope global || true
-ip addr replace "$ETH_STATIC_CIDR" dev "$ETH_IFACE"
 sysctl -w net.ipv4.ip_forward=1 >/dev/null
 
 if ! ip -4 addr show dev "$ETH_IFACE" | grep -q "inet ${ETH_STATIC_IP}/"; then

@@ -15,11 +15,12 @@ No packages, network services, DHCP server, forwarding rules, or extra IP addres
 
 ## Auto direct-bridge behavior
 
-When enabled with `mode: auto`, the helper waits for an Ethernet cable on `eth0`:
+When enabled with `mode: auto`, the helper periodically reconciles `eth0` and also reacts to NetworkManager link events:
 
 1. If `eth0` gets a normal DHCP address, it stays in normal client mode.
 2. If `eth0` has carrier but no DHCP address after `dhcp_timeout_seconds`, the Pi assumes a direct Hue bridge is attached.
-3. The Pi assigns a private address to `eth0`, starts DHCP for the bridge, and NATs bridge internet through Wi-Fi.
+3. The Pi activates a dedicated NetworkManager manual profile for `eth0`, starts DHCP for the bridge, and NATs bridge internet through Wi-Fi.
+4. If the cable is unplugged, direct-mode runtime state is cleaned up so the next plug-in can try normal DHCP again first.
 
 Example:
 

@@ -6,6 +6,6 @@
 - name: restart hue-bridge-direct-net
   ansible.builtin.systemd:
     name: hue-bridge-direct-net.service
-    state: restarted
+    state: started
   when: rpi_network.enabled | default(false) | bool
   failed_when: false
