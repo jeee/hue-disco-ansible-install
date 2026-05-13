@@ -58,3 +58,26 @@
     name: "{{ python_requirements }}"
     state: present
     virtualenv: "{{ venv_dir }}"
+
+- name: Install CPU PyTorch for BeatNet detector
+  ansible.builtin.pip:
+    name: "{{ python_beatnet_torch_requirement }}"
+    state: present
+    virtualenv: "{{ venv_dir }}"
+    extra_args: "--index-url https://download.pytorch.org/whl/cpu --extra-index-url https://www.piwheels.org/simple"
+  when: python_beatnet_enabled | default(true) | bool
+
+- name: Install BeatNet detector runtime requirements
+  ansible.builtin.pip:
+    name: "{{ python_beatnet_runtime_requirements }}"
+    state: present
+    virtualenv: "{{ venv_dir }}"
+  when: python_beatnet_enabled | default(true) | bool
+
+- name: Install BeatNet detector package without stale upstream dependency pins
+  ansible.builtin.pip:
+    name: "{{ python_beatnet_requirement }}"
+    state: present
+    virtualenv: "{{ venv_dir }}"
+    extra_args: "--no-deps"
+  when: python_beatnet_enabled | default(true) | bool

@@ -96,6 +96,11 @@ python_requirements:
   - aubio-ledfx>=0.4.11
   - gpiozero>=2.0.1
 
+# Install the BeatNet neural detector stack. The role installs BeatNet with a
+# curated dependency set because BeatNet 1.1.3 declares an obsolete numba pin
+# that is not installable on current Raspberry Pi OS Python versions.
+python_beatnet_enabled: true
+
 hue:
   backend_mode: diyhue   # diyhue | official_bridge
   # For diyHue, bridge_ip is optional and defaults to 127.0.0.1 on the Pi.

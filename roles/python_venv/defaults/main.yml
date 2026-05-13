@@ -1,6 +1,16 @@
 python_venv_python: python3
 python_venv_packages: []
 python_requirements: []
+python_beatnet_enabled: true
+python_beatnet_torch_requirement: torch
+python_beatnet_requirement: BeatNet==1.1.3
+python_beatnet_runtime_requirements:
+  - cython>=3.0.0
+  - librosa>=0.11.0
+  - scipy
+  - mido>=1.2.8
+  - madmom
+  - matplotlib
 project_name: hue-disco
 project_user: hue
 project_group: hue
