@@ -1,7 +1,5 @@
 # Raspberry Pi network modes for a directly connected Hue bridge
 
-> **Experimental / not in default install path:** this role can change live networking on a headless Pi. Do not enable it on an unattended device unless you have console, SD-card, or direct-Ethernet recovery access. The main `site.yml` intentionally does not run this role by default.
-
 This installer can optionally configure a Raspberry Pi to support a real Hue bridge plugged directly into `eth0` while the Pi uses Wi-Fi as its uplink.
 
 The feature is **disabled by default**. Nothing is changed unless `rpi_network.enabled: true` is set in `group_vars/all.yml`.

@@ -37,6 +37,15 @@ cleanup_runtime() {
   fi
 }
 
+runtime_complete() {
+  [ -s "$DNSMASQ_PID" ] && kill -0 "$(cat "$DNSMASQ_PID")" 2>/dev/null || return 1
+  nft list table ip "$TABLE_NAME" >/dev/null 2>&1 || return 1
+  if [ "$LAN_EXPOSE" = "1" ]; then
+    [ -s "$LAN_IP_FILE" ] || return 1
+  fi
+  return 0
+}
+
 if [ "${1:-start}" = "stop" ]; then
   cleanup_runtime
   exit 0
@@ -87,13 +96,21 @@ if [ "$carrier" != "1" ]; then
   exit 0
 fi
 
-if [ "$MODE" = "auto" ]; then
-  log "$ETH_IFACE carrier detected; waiting ${DHCP_TIMEOUT}s for normal DHCP client address"
-  sleep "$DHCP_TIMEOUT"
-  if ip -4 addr show dev "$ETH_IFACE" scope global | grep -v "${ETH_STATIC_IP}/" | grep -q 'inet '; then
-    log "$ETH_IFACE already has a non-fallback IPv4 address; staying in normal client mode"
-    cleanup_runtime
+if ip -4 addr show dev "$ETH_IFACE" scope global | grep -q "inet ${ETH_STATIC_IP}/"; then
+  if runtime_complete; then
+    log "direct Hue bridge mode already active on $ETH_IFACE; nothing to do"
     exit 0
+  fi
+  log "direct Hue bridge address is present but runtime state is incomplete; repairing"
+else
+  if [ "$MODE" = "auto" ]; then
+    log "$ETH_IFACE carrier detected; waiting ${DHCP_TIMEOUT}s for normal DHCP client address"
+    sleep "$DHCP_TIMEOUT"
+    if ip -4 addr show dev "$ETH_IFACE" scope global | grep -v "${ETH_STATIC_IP}/" | grep -q 'inet '; then
+      log "$ETH_IFACE already has a non-fallback IPv4 address; staying in normal client mode"
+      cleanup_runtime
+      exit 0
+    fi
   fi
 fi
 
