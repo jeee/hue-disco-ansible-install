@@ -211,6 +211,16 @@ EOF
 fi
 cat >> "$NFT_FILE" <<EOF
   }
+  chain output {
+    type nat hook output priority dstnat; policy accept;
+EOF
+if [ -n "$lan_ip" ]; then
+cat >> "$NFT_FILE" <<EOF
+    ip daddr $lan_ip tcp dport { $ports_csv } dnat to $HUE_INTERNAL_IP
+EOF
+fi
+cat >> "$NFT_FILE" <<EOF
+  }
   chain postrouting {
     type nat hook postrouting priority srcnat; policy accept;
 EOF
