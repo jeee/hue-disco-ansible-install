@@ -23,7 +23,9 @@ cleanup_runtime() {
     rm -f "$DNSMASQ_PID"
   fi
   if [ -s "$DHCLIENT_PID" ]; then
-    dhclient -r -pf "$DHCLIENT_PID" -lf "$DHCLIENT_LEASES" "${UPLINK_IFACE:-wlan0}" 2>/dev/null || true
+    # Do not send a DHCP release on the Wi-Fi uplink: NetworkManager owns the
+    # primary Wi-Fi connection. This pid is only for the optional one-shot
+    # secondary lease helper, and may already have exited.
     kill "$(cat "$DHCLIENT_PID")" 2>/dev/null || true
     rm -f "$DHCLIENT_PID"
   fi
@@ -162,19 +164,19 @@ if [ "$LAN_EXPOSE" = "1" ]; then
       fi
       ;;
     dhcp)
-      log "requesting secondary DHCP lease on $UPLINK_IFACE for LAN exposure"
+      log "requesting one-shot secondary DHCP lease on $UPLINK_IFACE for LAN exposure"
       cat > "$DHCLIENT_CONF" <<EOF
 send dhcp-client-identifier "$LAN_DHCP_CLIENT_ID";
-request subnet-mask, routers, domain-name-servers, domain-name, broadcast-address;
+request subnet-mask, broadcast-address;
 timeout 20;
-retry 30;
+retry 0;
 EOF
-      rm -f "$LAN_IP_FILE"
-      dhclient -v -cf "$DHCLIENT_CONF" -pf "$DHCLIENT_PID" -lf "$DHCLIENT_LEASES" -sf /usr/local/sbin/hue-bridge-direct-dhclient-script "$UPLINK_IFACE" || true
-      for _ in $(seq 1 25); do
-        [ -s "$LAN_IP_FILE" ] && break
-        sleep 1
-      done
+      rm -f "$LAN_IP_FILE" "$DHCLIENT_PID"
+      # Important: use -1 so dhclient exits after obtaining the secondary lease.
+      # A long-running second DHCP client on a NetworkManager-managed Wi-Fi
+      # interface can disturb the primary Wi-Fi lease/SSH session. The hook only
+      # adds the granted address as /32 and does not install routes or DNS.
+      timeout 30 dhclient -1 -v -cf "$DHCLIENT_CONF" -pf "$DHCLIENT_PID" -lf "$DHCLIENT_LEASES" -sf /usr/local/sbin/hue-bridge-direct-dhclient-script "$UPLINK_IFACE" || true
       if [ -s "$LAN_IP_FILE" ]; then
         lan_ip=$(cat "$LAN_IP_FILE")
       else
