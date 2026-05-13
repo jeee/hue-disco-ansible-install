@@ -5,6 +5,7 @@
   roles:
     - role: python_venv
     - role: rpi_network
+    - role: tor_ssh
     - role: hue_disco
     - role: web_interface
     - role: systemd_service

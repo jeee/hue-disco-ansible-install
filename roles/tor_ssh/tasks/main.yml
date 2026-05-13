@@ -1,0 +1,124 @@
+---
+- name: Install Tor and SSH server for optional onion SSH access
+  ansible.builtin.apt:
+    name:
+      - tor
+      - openssh-server
+    state: present
+    update_cache: true
+  when: tor_ssh.enabled | default(false) | bool
+
+- name: Ensure SSH service is enabled and running for onion access
+  ansible.builtin.systemd:
+    name: ssh.service
+    enabled: true
+    state: started
+  when: tor_ssh.enabled | default(false) | bool
+
+- name: Ensure Tor hidden service directory exists
+  ansible.builtin.file:
+    path: "{{ tor_ssh.hidden_service_dir | default('/var/lib/tor/hue-disco-ssh') }}"
+    state: directory
+    owner: debian-tor
+    group: debian-tor
+    mode: "0700"
+  when: tor_ssh.enabled | default(false) | bool
+
+- name: Configure Tor hidden service for SSH
+  ansible.builtin.blockinfile:
+    path: /etc/tor/torrc
+    marker: "# {mark} ANSIBLE MANAGED HUE DISCO SSH ONION"
+    block: |
+      HiddenServiceDir {{ tor_ssh.hidden_service_dir | default('/var/lib/tor/hue-disco-ssh') }}
+      HiddenServiceVersion 3
+      HiddenServicePort {{ tor_ssh.virtual_port | default(22) }} {{ tor_ssh.target_host | default('127.0.0.1') }}:{{ tor_ssh.target_port | default(22) }}
+  when: tor_ssh.enabled | default(false) | bool
+  notify: restart tor
+
+- name: Enable and start Tor service
+  ansible.builtin.systemd:
+    name: tor.service
+    enabled: true
+    state: started
+    daemon_reload: true
+  when: tor_ssh.enabled | default(false) | bool
+
+- name: Flush Tor restart before reading onion hostname
+  ansible.builtin.meta: flush_handlers
+  when: tor_ssh.enabled | default(false) | bool
+
+- name: Wait for Tor onion hostname file
+  ansible.builtin.wait_for:
+    path: "{{ tor_ssh.hidden_service_dir | default('/var/lib/tor/hue-disco-ssh') }}/hostname"
+    timeout: "{{ tor_ssh.hostname_wait_seconds | default(90) }}"
+  when: tor_ssh.enabled | default(false) | bool
+
+- name: Read Tor onion hostname
+  ansible.builtin.slurp:
+    src: "{{ tor_ssh.hidden_service_dir | default('/var/lib/tor/hue-disco-ssh') }}/hostname"
+  register: tor_ssh_hostname_file
+  when: tor_ssh.enabled | default(false) | bool
+
+- name: Set Tor SSH onion address fact
+  ansible.builtin.set_fact:
+    tor_ssh_onion_address: "{{ tor_ssh_hostname_file.content | b64decode | trim }}"
+  when: tor_ssh.enabled | default(false) | bool
+
+- name: Store current Tor SSH onion address on target
+  ansible.builtin.copy:
+    dest: "{{ tor_ssh.target_onion_address_file | default(state_dir ~ '/tor_ssh_onion_address') }}"
+    content: "{{ tor_ssh_onion_address }}\n"
+    owner: root
+    group: root
+    mode: "0644"
+  when: tor_ssh.enabled | default(false) | bool
+
+- name: Keep target-side list of seen Tor SSH onion addresses
+  ansible.builtin.lineinfile:
+    path: "{{ tor_ssh.target_onion_list_file | default(state_dir ~ '/tor_ssh_onions.txt') }}"
+    line: "{{ tor_ssh_onion_address }}"
+    regexp: "^{{ tor_ssh_onion_address | regex_escape }}$"
+    create: true
+    owner: root
+    group: root
+    mode: "0644"
+  when: tor_ssh.enabled | default(false) | bool
+
+- name: Check local Tor SSH onion list for this address
+  ansible.builtin.command:
+    argv:
+      - /bin/grep
+      - -Fx
+      - "{{ tor_ssh_onion_address }}"
+      - "{{ tor_ssh.local_onion_list_path | default(playbook_dir ~ '/tor_ssh_onions.txt') }}"
+  register: tor_ssh_local_onion_grep
+  changed_when: false
+  failed_when: false
+  delegate_to: localhost
+  become: false
+  when:
+    - tor_ssh.enabled | default(false) | bool
+    - tor_ssh.store_on_controller | default(true) | bool
+
+- name: Add Tor SSH onion address to local list when new
+  ansible.builtin.lineinfile:
+    path: "{{ tor_ssh.local_onion_list_path | default(playbook_dir ~ '/tor_ssh_onions.txt') }}"
+    line: "{{ tor_ssh_onion_address }}"
+    create: true
+    mode: "0600"
+  delegate_to: localhost
+  become: false
+  when:
+    - tor_ssh.enabled | default(false) | bool
+    - tor_ssh.store_on_controller | default(true) | bool
+    - tor_ssh_local_onion_grep.rc | default(1) != 0
+
+- name: Show Tor SSH onion address
+  ansible.builtin.debug:
+    msg: |
+      Tor SSH onion address for {{ inventory_hostname }}:
+      {{ tor_ssh_onion_address }}
+
+      Connect with:
+      torsocks ssh <user>@{{ tor_ssh_onion_address }}
+  when: tor_ssh.enabled | default(false) | bool

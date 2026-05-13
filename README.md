@@ -170,6 +170,8 @@ For a real Hue bridge, you can leave `bridge_ip` empty and let bootstrap try aut
 
 Optional Raspberry Pi direct-bridge networking is available but disabled by default. When explicitly enabled, the Pi can fall back to a private `eth0` subnet for a Hue bridge plugged directly into Ethernet, NAT its internet access through Wi-Fi, and optionally request a second Wi-Fi DHCP lease that forwards selected TCP ports to the bridge. See `docs/RPI_NETWORK_MODES.md`.
 
+Optional SSH access over Tor is also available but disabled by default. When explicitly enabled, the installer creates a Tor v3 onion service for local SSH and stores the onion address locally. See `docs/TOR_SSH_ACCESS.md`.
+
 Trigger a diyHue scan manually:
 
 ```bash

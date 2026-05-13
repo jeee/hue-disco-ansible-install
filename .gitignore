@@ -4,3 +4,5 @@ inventory.ini
 .DS_Store
 
 group_vars/all.yml
+# Local list of Tor SSH onion addresses discovered during installs
+tor_ssh_onions.txt

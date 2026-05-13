@@ -43,6 +43,24 @@ web_port: 8090
 #     # mode: static
 #     # virtual_ip: "192.168.1.51"
 
+# Optional Tor hidden service for SSH access.
+# Disabled by omission. Uncomment to install Tor and expose local SSH as a v3 onion service.
+# The onion address is stored on the Pi and appended to a local controller-side list if new.
+#
+# tor_ssh:
+#   enabled: true
+#
+# Optional overrides:
+#   virtual_port: 22
+#   target_host: 127.0.0.1
+#   target_port: 22
+#   hidden_service_dir: /var/lib/tor/hue-disco-ssh
+#   target_onion_address_file: /var/lib/hue-disco/tor_ssh_onion_address
+#   target_onion_list_file: /var/lib/hue-disco/tor_ssh_onions.txt
+#   store_on_controller: true
+#   local_onion_list_path: "{{ playbook_dir }}/tor_ssh_onions.txt"
+#   hostname_wait_seconds: 90
+
 python_venv_python: python3
 python_venv_packages:
   - python3
