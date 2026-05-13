@@ -33,7 +33,7 @@ web_port: 8090
 #   eth_downstream:
 #     address: 192.168.77.1/24
 #     dhcp_start: 192.168.77.2
-#     dhcp_end: 192.168.77.10
+#     dhcp_end: 192.168.77.10   # reserved for future multi-client use; current bridge DHCP is pinned to hue_bridge_ip
 #     lease_time: 24h
 #     hue_bridge_ip: 192.168.77.2
 #   expose_to_lan:

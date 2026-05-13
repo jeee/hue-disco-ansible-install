@@ -68,6 +68,11 @@ ETH_DHCP_START=${ETH_DHCP_START:-192.168.77.2}
 ETH_DHCP_END=${ETH_DHCP_END:-192.168.77.10}
 ETH_DHCP_LEASE=${ETH_DHCP_LEASE:-24h}
 HUE_INTERNAL_IP=${HUE_INTERNAL_IP:-$ETH_DHCP_START}
+# This direct-Ethernet mode is intended for one real Hue bridge. Keep the DHCP
+# lease pinned to the address that NAT/forwarding targets, otherwise LAN exposure
+# can point at .2 while dnsmasq hands the bridge .3/.4/etc.
+EFFECTIVE_DHCP_START=$HUE_INTERNAL_IP
+EFFECTIVE_DHCP_END=$HUE_INTERNAL_IP
 LAN_EXPOSE=${LAN_EXPOSE:-0}
 LAN_EXPOSE_MODE=${LAN_EXPOSE_MODE:-dhcp}
 LAN_DHCP_CLIENT_ID=${LAN_DHCP_CLIENT_ID:-hue-bridge-direct-$(hostname)}
@@ -144,7 +149,7 @@ bind-interfaces
 except-interface=lo
 dhcp-authoritative
 dhcp-leasefile=$RUNDIR/dnsmasq.leases
-dhcp-range=$ETH_DHCP_START,$ETH_DHCP_END,$ETH_DHCP_LEASE
+dhcp-range=$EFFECTIVE_DHCP_START,$EFFECTIVE_DHCP_END,$ETH_DHCP_LEASE
 dhcp-option=option:router,$ETH_STATIC_IP
 dhcp-option=option:dns-server,$ETH_STATIC_IP
 server=1.1.1.1

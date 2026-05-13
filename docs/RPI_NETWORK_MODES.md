@@ -67,6 +67,8 @@ rpi_network:
     forwarded_tcp_ports: [80, 443]
 ```
 
+For the direct Ethernet side, dnsmasq pins the bridge lease to `hue_bridge_ip` so LAN forwarding has a stable target. The configured range is kept for compatibility/future use, but current direct-bridge mode is intentionally one bridge = one fixed downstream lease.
+
 The helper runs a one-shot DHCP request on `wlan0` with the configured DHCP client identifier. If the router grants a second lease, the helper adds that IP as `/32` on `wlan0` and exits; it does not leave a second DHCP client running next to NetworkManager. It then installs nftables rules like this:
 
 ```text
