@@ -40,9 +40,6 @@ cleanup_runtime() {
 runtime_complete() {
   [ -s "$DNSMASQ_PID" ] && kill -0 "$(cat "$DNSMASQ_PID")" 2>/dev/null || return 1
   nft list table ip "$TABLE_NAME" >/dev/null 2>&1 || return 1
-  if [ "$LAN_EXPOSE" = "1" ]; then
-    [ -s "$LAN_IP_FILE" ] || return 1
-  fi
   return 0
 }
 

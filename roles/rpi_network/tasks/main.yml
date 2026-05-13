@@ -36,14 +36,10 @@
     mode: "0755"
   when: rpi_network.enabled | default(false) | bool
 
-- name: Deploy NetworkManager dispatcher hook for direct bridge mode
-  ansible.builtin.template:
-    src: hue-bridge-direct-dispatcher.j2
-    dest: /etc/NetworkManager/dispatcher.d/90-hue-bridge-direct
-    owner: root
-    group: root
-    mode: "0755"
-  when: rpi_network.enabled | default(false) | bool
+- name: Remove old NetworkManager dispatcher hook for direct bridge mode
+  ansible.builtin.file:
+    path: /etc/NetworkManager/dispatcher.d/90-hue-bridge-direct
+    state: absent
 
 - name: Deploy Hue bridge direct network systemd unit
   ansible.builtin.template:
@@ -56,24 +52,20 @@
   notify:
     - daemon-reload
 
-- name: Deploy Hue bridge direct network systemd timer
-  ansible.builtin.template:
-    src: hue-bridge-direct-net.timer.j2
-    dest: /etc/systemd/system/hue-bridge-direct-net.timer
-    owner: root
-    group: root
-    mode: "0644"
-  when: rpi_network.enabled | default(false) | bool
-  notify:
-    - daemon-reload
-
-- name: Enable periodic Hue bridge direct network reconciliation when explicitly enabled
+- name: Disable old periodic Hue bridge direct network reconciliation
   ansible.builtin.systemd:
     name: hue-bridge-direct-net.timer
-    enabled: true
-    state: started
+    enabled: false
+    state: stopped
     daemon_reload: true
-  when: rpi_network.enabled | default(false) | bool
+  failed_when: false
+
+- name: Remove old Hue bridge direct network systemd timer
+  ansible.builtin.file:
+    path: /etc/systemd/system/hue-bridge-direct-net.timer
+    state: absent
+  notify:
+    - daemon-reload
 
 - name: Trigger Hue bridge direct network reconciliation once when explicitly enabled
   ansible.builtin.command:
